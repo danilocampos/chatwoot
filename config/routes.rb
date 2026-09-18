@@ -354,6 +354,7 @@ Rails.application.routes.draw do
 
           resources :custom_attribute_definitions, only: [:index, :show, :create, :update, :destroy]
           resources :custom_filters, only: [:index, :show, :create, :update, :destroy]
+          resources :kanban_funnels, only: [:index, :create, :update]
           resources :kanban, only: [:index] do
             get :export, on: :collection
             put :move, on: :member

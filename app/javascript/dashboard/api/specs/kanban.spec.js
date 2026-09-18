@@ -39,4 +39,17 @@ describe('#KanbanAPI', () => {
       params: { status: 'convertido' },
     });
   });
+
+  it('sends the destination funnel and explicitly allows returning to the default board', () => {
+    KanbanAPI.moveConversation(42, 'proposal', 7);
+    expect(axiosMock.put).toHaveBeenLastCalledWith('/api/v1/kanban/42/move', {
+      status: 'proposal',
+      funnel_id: 7,
+    });
+    KanbanAPI.moveConversation(42, 'novo_lead', '');
+    expect(axiosMock.put).toHaveBeenLastCalledWith('/api/v1/kanban/42/move', {
+      status: 'novo_lead',
+      funnel_id: '',
+    });
+  });
 });

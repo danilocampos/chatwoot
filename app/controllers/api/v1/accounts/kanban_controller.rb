@@ -1,10 +1,10 @@
 class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
   STATUSES = %w[novo_lead aquecimento qualificado convertido perdido].freeze
-  DEFAULT_STATUS = STATUSES.first
   BOARD_LIMIT = 500
 
   before_action :authorize_index!, only: [:index, :export]
   before_action :conversation, only: [:move]
+  before_action :set_funnel
 
   def index
     conversations = filtered_conversations.limit(BOARD_LIMIT + 1).to_a
@@ -19,14 +19,8 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
   end
 
   def move
-    status = params.require(:status)
-    return render json: { error: 'invalid_status' }, status: :unprocessable_content unless STATUSES.include?(status)
-
-    @conversation.with_lock do
-      @conversation.update!(custom_attributes: @conversation.custom_attributes.to_h.merge('kanban_status' => status))
-    end
-
-    render json: { conversation: serialize_conversation(@conversation.reload) }
+    # Serialize stage edits and moves through the same funnel lock.
+    @funnel ? @funnel.with_lock { move_to_stage } : move_to_stage
   end
 
   def export
@@ -36,6 +30,26 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
   end
 
   private
+
+  def set_funnel
+    @funnel = Current.account.kanban_funnels.find(params[:funnel_id]) if params[:funnel_id].present?
+  end
+
+  def statuses
+    @funnel ? @funnel.stage_ids : STATUSES
+  end
+
+  def move_to_stage
+    status = params.require(:status)
+    return render json: { error: 'invalid_status' }, status: :unprocessable_content unless statuses.include?(status)
+
+    @conversation.with_lock do
+      attributes = @conversation.custom_attributes.to_h.merge('kanban_status' => status)
+      @funnel ? attributes['kanban_funnel_id'] = @funnel.id.to_s : attributes.delete('kanban_funnel_id')
+      @conversation.update!(custom_attributes: attributes)
+    end
+    render json: { conversation: serialize_conversation(@conversation.reload) }
+  end
 
   def authorize_index!
     authorize Conversation, :index?
@@ -56,6 +70,11 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
             SQL
             .includes(:assignee, :contact, :inbox)
             .order(last_activity_at: :desc, id: :desc)
+    scope = if @funnel
+              scope.where("conversations.custom_attributes->>'kanban_funnel_id' = ?", @funnel.id.to_s)
+            else
+              scope.where("NULLIF(conversations.custom_attributes->>'kanban_funnel_id', '') IS NULL")
+            end
     scope = filter_by_status(scope)
     scope = filter_by_temperature(scope)
     scope = filter_by_score(scope)
@@ -65,10 +84,12 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
 
   def filter_by_status(scope)
     return scope if params[:status].blank?
-    return scope.none unless STATUSES.include?(params[:status])
+    return scope.none unless statuses.include?(params[:status])
 
-    if params[:status] == DEFAULT_STATUS
-      scope.where("COALESCE(NULLIF(conversations.custom_attributes->>'kanban_status', ''), ?) = ?", DEFAULT_STATUS, DEFAULT_STATUS)
+    if params[:status] == statuses.first
+      return scope if statuses.one?
+
+      scope.where("COALESCE(conversations.custom_attributes->>'kanban_status', '') NOT IN (?)", statuses.drop(1))
     else
       scope.where("conversations.custom_attributes->>'kanban_status' = ?", params[:status])
     end
@@ -109,7 +130,7 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
   end
 
   def grouped_conversations(conversations)
-    grouped = STATUSES.index_with { [] }
+    grouped = statuses.index_with { [] }
     conversations.each { |conversation| grouped[kanban_status(conversation)] << serialize_conversation(conversation) }
     grouped
   end
@@ -127,7 +148,7 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
 
   def kanban_status(conversation)
     status = conversation.custom_attributes.to_h['kanban_status']
-    STATUSES.include?(status) ? status : DEFAULT_STATUS
+    statuses.include?(status) ? status : statuses.first
   end
 
   def serialize_conversation(conversation)
@@ -136,6 +157,7 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
     {
       id: conversation.display_id,
       kanban_status: kanban_status(conversation),
+      kanban_funnel_id: @funnel&.id,
       contact: {
         id: contact&.id,
         name: contact&.name,

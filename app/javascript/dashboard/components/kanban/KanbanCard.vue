@@ -8,6 +8,7 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 const props = defineProps({
   conversation: { type: Object, required: true },
 });
+const emit = defineEmits(['transfer']);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -111,5 +112,12 @@ const openConversation = () => {
       </span>
       <span class="text-xs text-n-slate-10">{{ lastActivity }}</span>
     </div>
+    <button
+      type="button"
+      class="mt-3 text-xs text-n-blue-11 hover:underline"
+      @click.stop="emit('transfer')"
+    >
+      {{ t('KANBAN.FUNNELS.MOVE') }}
+    </button>
   </article>
 </template>

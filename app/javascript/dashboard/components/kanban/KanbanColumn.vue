@@ -11,7 +11,7 @@ defineProps({
   conversations: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['moveCard', 'exportColumn']);
+const emit = defineEmits(['moveCard', 'exportColumn', 'transferCard']);
 const { t } = useI18n();
 const isOver = ref(false);
 
@@ -58,6 +58,7 @@ const onDrop = (event, targetStatus) => {
         v-for="conversation in conversations"
         :key="conversation.id"
         :conversation="conversation"
+        @transfer="emit('transferCard', conversation)"
       />
       <div
         v-if="!conversations.length"

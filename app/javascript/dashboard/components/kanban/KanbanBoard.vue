@@ -6,7 +6,7 @@ defineProps({
   conversationsByStatus: { type: Object, required: true },
 });
 
-const emit = defineEmits(['moveCard', 'exportColumn']);
+const emit = defineEmits(['moveCard', 'exportColumn', 'transferCard']);
 </script>
 
 <template>
@@ -19,6 +19,7 @@ const emit = defineEmits(['moveCard', 'exportColumn']);
         :conversations="conversationsByStatus[column.id] || []"
         @move-card="emit('moveCard', $event)"
         @export-column="emit('exportColumn', $event)"
+        @transfer-card="emit('transferCard', $event)"
       />
     </div>
   </div>
