@@ -384,6 +384,10 @@ Rails.application.routes.draw do
           end
 
           namespace :whatsapp do
+            resources :providers, only: [:index, :show] do
+              post :connect, on: :member
+              post :test_connection, on: :member
+            end
             resource :authorization, only: [:create]
             resource :access_request, only: [:create] if ChatwootApp.enterprise?
             post 'manual/preview', to: 'manual_setup#preview'
@@ -675,6 +679,7 @@ Rails.application.routes.draw do
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
+  post 'webhooks/whatsapp_providers/:provider/:channel_id', to: 'webhooks/whatsapp_providers#create', as: :whatsapp_provider_webhook
   post 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#process_payload'
   get 'webhooks/instagram', to: 'webhooks/instagram#verify'
   post 'webhooks/instagram', to: 'webhooks/instagram#events'
@@ -729,6 +734,11 @@ Rails.application.routes.draw do
       root to: 'dashboard#index'
 
       resource :app_config, only: [:show, :create]
+      resources :whatsapp_providers, only: [:index, :show, :update] do
+        post :test_connection, on: :member
+        get :account, on: :collection
+        patch :update_account, on: :collection
+      end
       resource :push_diagnostics, only: [:show, :create] do
         post :destroy_subscriptions, on: :collection
       end

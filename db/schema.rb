@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_31_000000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -749,6 +749,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_000000) do
     t.jsonb "phone_number_health", default: {}, null: false
     t.datetime "phone_number_health_checked_at"
     t.string "phone_number_health_error", limit: 500
+    t.text "provider_credentials"
+    t.jsonb "provider_connection", default: {}, null: false
     t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
     t.index ["phone_number"], name: "index_channel_whatsapp_on_phone_number", unique: true
   end
@@ -1578,6 +1580,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_000000) do
     t.string "name"
     t.string "secret"
     t.index ["account_id", "url"], name: "index_webhooks_on_account_id_and_url", unique: true
+  end
+
+  create_table "whatsapp_provider_configurations", force: :cascade do |t|
+    t.string "provider", null: false
+    t.boolean "enabled", default: false, null: false
+    t.jsonb "settings", default: {}, null: false
+    t.text "credentials"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider"], name: "index_whatsapp_provider_configurations_on_provider", unique: true
   end
 
   create_table "working_hours", force: :cascade do |t|

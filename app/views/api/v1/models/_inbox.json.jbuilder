@@ -80,7 +80,7 @@ json.medium resource.channel.try(:medium) if resource.twilio?
 if resource.twilio?
   json.content_templates resource.channel.try(:content_templates)
   if Current.account_user&.administrator?
-    json.auth_token resource.channel.try(:auth_token)
+    json.auth_token_configured resource.channel.try(:auth_token).present?
     json.account_sid resource.channel.try(:account_sid)
     json.api_key_sid resource.channel.try(:api_key_sid)
   end
@@ -142,9 +142,12 @@ json.bot_name resource.channel.try(:bot_name) if resource.telegram?
 
 ### WhatsApp Channel
 if resource.whatsapp?
+  json.whatsapp_session resource.channel.session_provider?
   message_templates = resource.channel.try(:message_templates)
   json.message_templates message_templates.is_a?(Array) ? message_templates : []
-  json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
+  if Current.account_user&.administrator?
+    json.provider_config resource.channel.public_provider_config
+  end
   if Current.account_user&.administrator? &&
      ChatwootApp.chatwoot_cloud? &&
      (resource.channel.try(:provider_config) || {}).to_h['source'] == 'embedded_signup'

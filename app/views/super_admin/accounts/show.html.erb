@@ -25,6 +25,7 @@ as well as a link to its edit page.
     </h1>
 
     <div>
+      <%= link_to t('whatsapp_providers.title'), account_super_admin_whatsapp_providers_path(account_id: page.resource.id), class: 'button' %>
       <%= if accessible_action?(page.resource, :edit)
         link_to("Edit", [:edit, namespace, page.resource], class: "button")
       end %>

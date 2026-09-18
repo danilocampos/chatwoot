@@ -17,7 +17,10 @@ module Enterprise::Channelable
 
       auditable_id = inbox.id
       auditable_type = 'Inbox'
-      audited_changes = saved_changes.except('updated_at', 'secret')
+      audited_changes = saved_changes.except('updated_at', 'secret', 'auth_token', 'api_key_secret')
+      if is_a?(Channel::Whatsapp)
+        audited_changes = audited_changes.except('provider_credentials', 'provider_config', 'provider_connection', 'business_management_token')
+      end
 
       return if audited_changes.blank?
 

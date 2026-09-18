@@ -1,5 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import WhatsappProvidersAPI from 'dashboard/api/whatsappProviders';
+import { providerAllowed } from 'dashboard/helper/whatsappProviders';
+import SessionWhatsapp from './SessionWhatsapp.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
 import Twilio from './Twilio.vue';
@@ -17,6 +20,22 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { META_RESTRICTION_STATUS_URL } from 'dashboard/constants/globals';
 
 const route = useRoute();
+const registry = ref([]);
+const loadingProviders = ref(true);
+const providerLoadFailed = ref(false);
+onMounted(async () => {
+  try {
+    const response = await WhatsappProvidersAPI.get();
+    registry.value = response.data;
+  } catch {
+    providerLoadFailed.value = true;
+  } finally {
+    loadingProviders.value = false;
+  }
+});
+const sessionProvider = computed(() =>
+  registry.value.find(item => item.session && item.id === route.query.provider)
+);
 const router = useRouter();
 const { t } = useI18n();
 const accessRequestDialogRef = ref(null);
@@ -75,22 +94,37 @@ const shouldShowEmbeddedSignupAccessRequest = computed(() => {
   );
 });
 
-const availableProviders = computed(() => [
-  {
-    key: PROVIDER_TYPES.WHATSAPP,
-    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
-    description: isWhatsappEmbeddedSignupDisabled.value
-      ? t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_MANUAL_SETUP_DESC')
-      : t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
-    icon: 'i-woot-whatsapp',
-  },
-  {
-    key: PROVIDER_TYPES.TWILIO,
-    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
-    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
-    icon: 'i-woot-twilio',
-  },
-]);
+const availableProviders = computed(() =>
+  [
+    {
+      key: PROVIDER_TYPES.WHATSAPP,
+      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
+      description: isWhatsappEmbeddedSignupDisabled.value
+        ? t(
+            'INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_MANUAL_SETUP_DESC'
+          )
+        : t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
+      icon: 'i-woot-whatsapp',
+    },
+    {
+      key: PROVIDER_TYPES.TWILIO,
+      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
+      description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
+      icon: 'i-woot-twilio',
+    },
+  ]
+    .filter(item => providerAllowed(registry.value, item.key))
+    .concat(
+      registry.value
+        .filter(item => item.session || item.id === 'default')
+        .map(item => ({
+          key: item.id === 'default' ? '360dialog' : item.id,
+          title: item.name,
+          description: '',
+          icon: 'i-woot-whatsapp',
+        }))
+    )
+);
 
 const providerSelectionDescription = computed(() =>
   isWhatsappEmbeddedSignupDisabled.value
@@ -137,7 +171,26 @@ const requestEmbeddedSignupAccess = () => {
 <template>
   <div class="col-span-6 w-full h-full min-h-0 overflow-y-auto p-6">
     <WhatsappAccessRequestDialog ref="accessRequestDialogRef" />
-    <div v-if="isManualSetup">
+    <p v-if="loadingProviders" role="status">
+      {{ $t('WHATSAPP_PROVIDERS.loading') }}
+    </p>
+    <p v-else-if="providerLoadFailed" role="alert">
+      {{ $t('WHATSAPP_PROVIDERS.load_failed') }}
+    </p>
+    <p
+      v-else-if="
+        selectedProvider && !providerAllowed(registry, selectedProvider)
+      "
+      role="alert"
+    >
+      {{ $t('WHATSAPP_PROVIDERS.unavailable') }}
+    </p>
+    <SessionWhatsapp
+      v-else-if="sessionProvider"
+      :key="sessionProvider.id"
+      :provider="sessionProvider"
+    />
+    <div v-else-if="isManualSetup">
       <div
         v-if="shouldShowEmbeddedSignupAccessRequest"
         class="w-full p-5 mb-6 border rounded-xl border-n-weak bg-n-surface-2 text-start"
@@ -214,7 +267,7 @@ const requestEmbeddedSignupAccess = () => {
         </p>
       </div>
 
-      <div class="flex gap-6 justify-start">
+      <div class="flex flex-wrap gap-6 justify-start">
         <ChannelSelector
           v-for="provider in availableProviders"
           :key="provider.key"

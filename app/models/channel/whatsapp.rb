@@ -25,20 +25,26 @@
 class Channel::Whatsapp < ApplicationRecord
   include Channelable
   include Reauthorizable
+  include WhatsappProviderCredentials
 
   self.table_name = 'channel_whatsapp'
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
   encrypts :business_management_token if Chatwoot.encryption_configured?
 
   # default at the moment is 360dialog lets change later.
-  PROVIDERS = %w[default whatsapp_cloud].freeze
+  PROVIDERS = (Whatsapp::ProviderRegistry::DEFINITIONS.keys - ['twilio']).freeze
   before_validation :ensure_webhook_verify_token
+  before_validation :protect_provider_credentials
+  before_save :protect_provider_credentials
+  after_create :sync_templates
+  before_update :reset_changed_session_connection
 
   validates :provider, inclusion: { in: PROVIDERS }
   validates :phone_number, presence: true, uniqueness: true
+  validates :phone_number, format: { with: /\A\+[1-9]\d{6,14}\z/ }, if: :session_provider?
+  validate :validate_provider_availability
   validate :validate_provider_config
 
-  after_create :sync_templates
   after_update_commit :log_credentials_transfer, if: :saved_change_to_provider_config?
   before_destroy :teardown_webhooks
   after_commit :setup_webhooks, on: :create, if: :should_auto_setup_webhooks?
@@ -69,11 +75,11 @@ class Channel::Whatsapp < ApplicationRecord
   end
 
   def provider_service
-    if provider == 'whatsapp_cloud'
-      Whatsapp::Providers::WhatsappCloudService.new(whatsapp_channel: self)
-    else
-      Whatsapp::Providers::Whatsapp360DialogService.new(whatsapp_channel: self)
-    end
+    Whatsapp::ProviderRegistry.fetch(provider).service.constantize.new(whatsapp_channel: self)
+  end
+
+  def session_provider?
+    Whatsapp::ProviderRegistry::DEFINITIONS[provider]&.session || false
   end
 
   def template_access_token
@@ -83,7 +89,7 @@ class Channel::Whatsapp < ApplicationRecord
   end
 
   def serializable_hash(options = nil)
-    super.except('business_management_token')
+    super.except('business_management_token', 'provider_credentials', 'provider_connection').merge('provider_config' => public_provider_config)
   end
 
   # Enables voice: turns calling on at Meta (idempotent), then re-registers webhooks
@@ -152,11 +158,42 @@ class Channel::Whatsapp < ApplicationRecord
   private
 
   def ensure_webhook_verify_token
-    provider_config['webhook_verify_token'] ||= SecureRandom.hex(16) if provider == 'whatsapp_cloud'
+    return unless provider == 'whatsapp_cloud' || session_provider?
+
+    token = provider_config['webhook_verify_token'].presence
+    if session_provider?
+      token = [provider_credentials_in_database, provider_config_in_database].compact
+                                                                             .filter_map { |values| values['webhook_verify_token'].presence }.first
+    end
+    self.provider_config = provider_config.merge('webhook_verify_token' => token || SecureRandom.hex(32))
   end
 
   def validate_provider_config
+    return unless PROVIDERS.include?(provider)
+    return if errors.any?
+
     errors.add(:provider_config, 'Invalid Credentials') unless provider_service.validate_provider_config?
+  end
+
+  def validate_provider_availability
+    return unless new_record? || provider_changed? || account_id_changed? || session_identity_changed?
+    return if Whatsapp::ProviderRegistry.available?(provider, account)
+
+    errors.add(:provider, I18n.t('whatsapp_providers.unavailable'))
+  end
+
+  def session_identity_changed?
+    return false unless session_provider? && persisted?
+
+    before = (provider_config_in_database || {}).merge(provider_credentials_in_database || {})
+    phone_number_changed? || %w[token instance_id].any? { |key| before[key] != provider_config[key] }
+  end
+
+  def reset_changed_session_connection
+    return unless session_identity_changed?
+
+    self.provider_connection = {}
+    self.provider_credentials = provider_credentials.except('qr_data_url')
   end
 
   # Logs only the embedded signup → manual migration (the save drops the

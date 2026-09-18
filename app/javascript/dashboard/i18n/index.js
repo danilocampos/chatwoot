@@ -41,6 +41,9 @@ import zh_CN from './locale/zh_CN';
 import zh_TW from './locale/zh_TW';
 import is from './locale/is';
 import lt from './locale/lt';
+import providersEn from './providers/en.json';
+import providersPt from './providers/pt_BR.json';
+import providersEs from './providers/es.json';
 
 export default {
   ar,
@@ -50,8 +53,8 @@ export default {
   da,
   de,
   el,
-  en,
-  es,
+  en: { ...en, ...providersEn },
+  es: { ...es, ...providersEs },
   et,
   fa,
   fi,
@@ -68,7 +71,7 @@ export default {
   nl,
   no,
   pl,
-  pt_BR,
+  pt_BR: { ...pt_BR, ...providersPt },
   pt,
   ro,
   ru,

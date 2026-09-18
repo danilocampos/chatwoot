@@ -10,6 +10,7 @@
       </svg>
     </summary>
     <ul class="ml-4 mt-1">
+      <li class="px-4 mb-1"><%= link_to t('whatsapp_providers.title'), super_admin_whatsapp_providers_path, class: 'flex px-2 py-1.5 text-sm rounded-lg' %></li>
       <% settings_pages.each do |_feature_key, attrs| %>
         <% url = super_admin_app_config_url(config: attrs['config_key']) %>
         <li class="px-4 mb-1">

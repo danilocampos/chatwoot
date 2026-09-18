@@ -340,13 +340,14 @@ RSpec.describe 'Inboxes API', type: :request do
         let(:twilio_channel) { create(:channel_twilio_sms, account: account, account_sid: 'AC123', auth_token: 'secrettoken') }
         let(:twilio_inbox) { create(:inbox, channel: twilio_channel, account: account) }
 
-        it 'returns auth_token and account_sid for admin' do
+        it 'returns the account SID and credential presence, never the auth token, for admin' do
           get "/api/v1/accounts/#{account.id}/inboxes/#{twilio_inbox.id}",
               headers: admin.create_new_auth_token,
               as: :json
           expect(response).to have_http_status(:success)
           data = JSON.parse(response.body, symbolize_names: true)
-          expect(data[:auth_token]).to eq('secrettoken')
+          expect(data[:auth_token]).to be_nil
+          expect(data[:auth_token_configured]).to be true
           expect(data[:account_sid]).to eq('AC123')
         end
 

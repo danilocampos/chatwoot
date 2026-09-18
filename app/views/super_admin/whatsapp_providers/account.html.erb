@@ -1,0 +1,15 @@
+<% content_for(:title) { t('whatsapp_providers.title') } %>
+<%= render 'mobile_navigation' %>
+<section class="p-6 max-w-3xl space-y-6">
+  <h1 class="text-2xl font-semibold"><%= t('whatsapp_providers.title') %> — <%= @account.name %></h1>
+  <p><%= t('whatsapp_providers.account_notice') %></p>
+  <%= form_with url: update_account_super_admin_whatsapp_providers_path(account_id: @account.id), method: :patch, class: 'space-y-4' do %>
+    <% @providers.each do |provider| %>
+      <div>
+        <%= check_box_tag "providers[#{provider.id}]", '1', @account.settings.fetch('whatsapp_providers', {}).fetch(provider.id, provider.default_enabled), id: "provider_#{provider.id}" %>
+        <%= label_tag "provider_#{provider.id}", provider.name %>
+      </div>
+    <% end %>
+    <%= submit_tag t('whatsapp_providers.save'), data: { disable_with: t('whatsapp_providers.saving') } %>
+  <% end %>
+</section>

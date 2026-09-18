@@ -66,7 +66,7 @@ class Whatsapp::WebhookSetupService
 
   def store_pin(pin)
     # Store the PIN in provider_config for future use
-    @channel.provider_config['verification_pin'] = pin
+    @channel.provider_config = @channel.provider_config.merge('verification_pin' => pin)
     @channel.save!
   end
 

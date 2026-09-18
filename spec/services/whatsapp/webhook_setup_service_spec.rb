@@ -344,7 +344,7 @@ describe Whatsapp::WebhookSetupService do
 
     context 'when PIN already exists' do
       before do
-        channel.provider_config['verification_pin'] = 123_456
+        channel.provider_config = channel.provider_config.merge('verification_pin' => 123_456)
         allow(api_client).to receive(:phone_number_verified?).with('123456789').and_return(false)
         allow(api_client).to receive(:register_phone_number)
         allow(api_client).to receive(:subscribe_phone_number_webhook).and_return({ 'success' => true })

@@ -16,9 +16,11 @@ import TextArea from 'next/textarea/TextArea.vue';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 import WhatsappBusinessManagementToken from './WhatsappBusinessManagementToken.vue';
 import HmacSecretKey from './components/HmacSecretKey.vue';
+import ProviderConnection from '../channels/ProviderConnection.vue';
 
 export default {
   components: {
+    ProviderConnection,
     SettingsFieldSection,
     SettingsToggleSection,
     SettingsAccordion,
@@ -215,6 +217,7 @@ export default {
 </script>
 
 <template>
+  <ProviderConnection v-if="inbox.whatsapp_session" :inbox-id="inbox.id" />
   <div v-if="isATwilioChannel">
     <SettingsFieldSection
       :label="$t('INBOX_MGMT.ADD.TWILIO.API_CALLBACK.TITLE')"
@@ -383,7 +386,11 @@ export default {
     <ImapSettings :inbox="inbox" />
     <SmtpSettings :inbox="inbox" />
   </div>
-  <div v-else-if="isAWhatsAppChannel && !isATwilioChannel">
+  <div
+    v-else-if="
+      isAWhatsAppChannel && !isATwilioChannel && !inbox.whatsapp_session
+    "
+  >
     <div v-if="inbox.provider_config">
       <!-- Embedded Signup Section -->
       <template v-if="isEmbeddedSignupWhatsApp">
@@ -393,7 +400,7 @@ export default {
             $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_SUBHEADER')
           "
         >
-          <woot-code :script="inbox.provider_config.webhook_verify_token" />
+          <p>{{ $t('WHATSAPP_PROVIDERS.keep_secret') }}</p>
         </SettingsFieldSection>
         <SettingsFieldSection
           v-if="showWhatsAppReconfigure"
@@ -422,7 +429,7 @@ export default {
             $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_SUBHEADER')
           "
         >
-          <woot-code :script="inbox.provider_config.webhook_verify_token" />
+          <p>{{ $t('WHATSAPP_PROVIDERS.keep_secret') }}</p>
         </SettingsFieldSection>
         <SettingsFieldSection
           :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_TITLE')"
@@ -430,7 +437,7 @@ export default {
             $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_SUBHEADER')
           "
         >
-          <woot-code :script="inbox.provider_config.api_key" />
+          <p>{{ $t('WHATSAPP_PROVIDERS.keep_secret') }}</p>
         </SettingsFieldSection>
         <SettingsFieldSection
           :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_TITLE')"
@@ -443,7 +450,7 @@ export default {
           >
             <woot-input
               v-model="whatsAppInboxAPIKey"
-              type="text"
+              type="password"
               class="flex-1 mr-2 [&>input]:!mb-0"
               :placeholder="
                 $t(
