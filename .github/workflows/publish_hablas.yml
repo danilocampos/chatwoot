@@ -1,0 +1,98 @@
+name: Publish Hablas release image
+
+on:
+  release:
+    types: [released]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-hablas
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/danilocampos/chatwoot
+
+jobs:
+  build:
+    if: github.repository == 'danilocampos/chatwoot' && startsWith(github.event.release.tag_name, 'v') && contains(github.event.release.tag_name, '-hablas.')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Prepare community release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-hablas\.[0-9]+$ ]]
+          rm -rf enterprise spec/enterprise
+          printf '\nENV CW_EDITION="ce"\n' >> docker/Dockerfile
+          sed -i "s/version: .*/version: '${RELEASE_TAG#v}'/" config/app.yml
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push immutable digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/${{ matrix.architecture }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/danilocampos/chatwoot
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.event.release.tag_name }}
+          cache-from: type=gha,scope=hablas-${{ matrix.architecture }}
+          cache-to: type=gha,mode=max,scope=hablas-${{ matrix.architecture }}
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish version and latest after both builds succeed
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          digests=()
+          for digest in *; do digests+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create -t "$IMAGE:$RELEASE_TAG" -t "$IMAGE:latest" "${digests[@]}"
+          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
