@@ -10,8 +10,11 @@ class KanbanAPI extends ApiClient {
     return axios.get(this.url, { params });
   }
 
-  moveConversation(conversationId, status) {
-    return axios.put(`${this.url}/${conversationId}/move`, { status });
+  moveConversation(conversationId, status, funnelId) {
+    return axios.put(`${this.url}/${conversationId}/move`, {
+      status,
+      ...(funnelId !== undefined ? { funnel_id: funnelId } : {}),
+    });
   }
 
   exportConversations(params = {}) {

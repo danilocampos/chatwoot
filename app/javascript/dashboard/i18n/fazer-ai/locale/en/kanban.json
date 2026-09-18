@@ -1,5 +1,26 @@
 {
   "KANBAN": {
+    "FUNNELS": {
+      "LABEL": "Funnel",
+      "DEFAULT": "Default funnel",
+      "NEW": "New funnel",
+      "EDIT": "Edit funnel",
+      "NAME": "Funnel name",
+      "HINT": "Up to 20 stages. Move conversations out of a stage before removing it.",
+      "STAGE": "Stage {number}",
+      "UP": "Move stage up",
+      "DOWN": "Move stage down",
+      "REMOVE": "Remove",
+      "ADD_STAGE": "Add stage",
+      "SAVE": "Save funnel",
+      "CANCEL": "Cancel",
+      "ERROR": "Could not save the funnel. Check names and move conversations out of removed stages.",
+      "FETCH_ERROR": "Could not load funnels. Refresh the page to try again.",
+      "MOVE": "Move to funnel or stage",
+      "MOVING": "Move {name}",
+      "DESTINATION_STAGE": "Destination stage",
+      "CONFIRM_MOVE": "Move conversation"
+    },
     "TITLE": "Conversation Kanban",
     "CONVERSATION_COUNT": "{count} conversations",
     "REFRESH": "Refresh",

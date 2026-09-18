@@ -19,6 +19,41 @@ RSpec.describe 'Kanban API', type: :request do
     create(:inbox_member, user: agent, inbox: inbox)
   end
 
+  describe 'custom funnels' do
+    let(:funnel) { account.kanban_funnels.create!(name: 'Sales', stages: [{ id: 'proposal', name: 'Proposal' }]) }
+
+    it 'transfers a conversation, scopes the board and export, and can return to the default funnel' do
+      put "/api/v1/accounts/#{account.id}/kanban/#{conversation.display_id}/move",
+          params: { funnel_id: funnel.id, status: 'proposal' }, headers: agent.create_new_auth_token, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(conversation.reload.custom_attributes['kanban_funnel_id']).to eq(funnel.id.to_s)
+
+      get "/api/v1/accounts/#{account.id}/kanban", headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body.dig('stats', 'total')).to eq(0)
+      get "/api/v1/accounts/#{account.id}/kanban", params: { funnel_id: funnel.id }, headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body.dig('kanban_data', 'proposal').pluck('id')).to eq([conversation.display_id])
+      get "/api/v1/accounts/#{account.id}/kanban/export", params: { funnel_id: funnel.id, status: 'proposal' },
+                                                       headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body['data'].pluck('conversation_id')).to eq([conversation.display_id])
+
+      put "/api/v1/accounts/#{account.id}/kanban/#{conversation.display_id}/move",
+          params: { funnel_id: '', status: 'novo_lead' }, headers: agent.create_new_auth_token, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(conversation.reload.custom_attributes).not_to have_key('kanban_funnel_id')
+    end
+
+    it 'rejects a foreign account funnel and a stage from the wrong funnel' do
+      other = create(:account).kanban_funnels.create!(name: 'Private', stages: [{ id: 'proposal', name: 'Proposal' }])
+      put "/api/v1/accounts/#{account.id}/kanban/#{conversation.display_id}/move",
+          params: { funnel_id: other.id, status: 'proposal' }, headers: agent.create_new_auth_token, as: :json
+      expect(response).to have_http_status(:not_found)
+      put "/api/v1/accounts/#{account.id}/kanban/#{conversation.display_id}/move",
+          params: { funnel_id: funnel.id, status: 'qualificado' }, headers: agent.create_new_auth_token, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(conversation.reload.custom_attributes).not_to have_key('kanban_funnel_id')
+    end
+  end
+
   describe 'GET /api/v1/accounts/:account_id/kanban' do
     it 'requires authentication' do
       get "/api/v1/accounts/#{account.id}/kanban"

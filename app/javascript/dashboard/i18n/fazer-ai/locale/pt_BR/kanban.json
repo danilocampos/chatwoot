@@ -1,5 +1,26 @@
 {
   "KANBAN": {
+    "FUNNELS": {
+      "LABEL": "Funil",
+      "DEFAULT": "Funil padrão",
+      "NEW": "Novo funil",
+      "EDIT": "Editar funil",
+      "NAME": "Nome do funil",
+      "HINT": "Até 20 etapas. Mova as conversas de uma etapa antes de removê-la.",
+      "STAGE": "Etapa {number}",
+      "UP": "Mover etapa para cima",
+      "DOWN": "Mover etapa para baixo",
+      "REMOVE": "Remover",
+      "ADD_STAGE": "Adicionar etapa",
+      "SAVE": "Salvar funil",
+      "CANCEL": "Cancelar",
+      "ERROR": "Não foi possível salvar o funil. Confira os nomes e mova as conversas das etapas removidas.",
+      "FETCH_ERROR": "Não foi possível carregar os funis. Atualize a página para tentar novamente.",
+      "MOVE": "Mover para funil ou etapa",
+      "MOVING": "Mover {name}",
+      "DESTINATION_STAGE": "Etapa de destino",
+      "CONFIRM_MOVE": "Mover conversa"
+    },
     "TITLE": "Kanban de conversas",
     "CONVERSATION_COUNT": "{count} conversas",
     "REFRESH": "Atualizar",

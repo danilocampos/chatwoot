@@ -1,0 +1,44 @@
+name: Hablas Kanban tests
+on:
+  push:
+    branches: [codex/kanban-funnels]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      RAILS_ENV: test
+      POSTGRES_DATABASE: hablas_kanban_test
+      POSTGRES_USERNAME: postgres
+      POSTGRES_HOST: localhost
+      REDIS_URL: redis://localhost:6379/2
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - run: bundle exec rake db:create db:schema:load db:migrate
+      - run: bundle exec rspec spec/models/kanban_funnel_spec.rb spec/controllers/api/v1/accounts/kanban_funnels_controller_spec.rb spec/controllers/api/v1/accounts/kanban_controller_spec.rb
+      - run: bundle exec rubocop app/models/kanban_funnel.rb app/policies/kanban_funnel_policy.rb app/controllers/api/v1/accounts/kanban_controller.rb app/controllers/api/v1/accounts/kanban_funnels_controller.rb spec/models/kanban_funnel_spec.rb spec/controllers/api/v1/accounts/kanban_controller_spec.rb spec/controllers/api/v1/accounts/kanban_funnels_controller_spec.rb db/migrate/20260918040000_create_kanban_funnels.rb
+      - run: ruby scripts/i18n/fork_translations.rb check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kanban-schema
+          path: db/schema.rb
+      - if: failure()
+        run: tail -100 log/test.log
