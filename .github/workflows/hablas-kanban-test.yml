@@ -33,8 +33,10 @@ jobs:
           bundler-cache: true
       - run: bundle exec rake db:create db:schema:load db:migrate
       - run: bundle exec rspec spec/models/kanban_funnel_spec.rb spec/controllers/api/v1/accounts/kanban_funnels_controller_spec.rb spec/controllers/api/v1/accounts/kanban_controller_spec.rb
-      - run: bundle exec rubocop app/models/kanban_funnel.rb app/policies/kanban_funnel_policy.rb app/controllers/api/v1/accounts/kanban_controller.rb app/controllers/api/v1/accounts/kanban_funnels_controller.rb spec/models/kanban_funnel_spec.rb spec/controllers/api/v1/accounts/kanban_controller_spec.rb spec/controllers/api/v1/accounts/kanban_funnels_controller_spec.rb db/migrate/20260918040000_create_kanban_funnels.rb
-      - run: ruby scripts/i18n/fork_translations.rb check
+      - if: success() || failure()
+        run: bundle exec rubocop app/models/kanban_funnel.rb app/policies/kanban_funnel_policy.rb app/controllers/api/v1/accounts/kanban_controller.rb app/controllers/api/v1/accounts/kanban_funnels_controller.rb spec/models/kanban_funnel_spec.rb spec/controllers/api/v1/accounts/kanban_controller_spec.rb spec/controllers/api/v1/accounts/kanban_funnels_controller_spec.rb db/migrate/20260918040000_create_kanban_funnels.rb
+      - if: success() || failure()
+        run: ruby scripts/i18n/fork_translations.rb check
       - uses: actions/upload-artifact@v4
         if: always()
         with:

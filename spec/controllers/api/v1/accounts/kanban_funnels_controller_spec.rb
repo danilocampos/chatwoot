@@ -27,9 +27,9 @@ RSpec.describe 'Kanban funnels API', type: :request do
     get url, headers: agent.create_new_auth_token, as: :json
     expect(response.parsed_body.pluck('id')).to eq([own.id])
     post url, params: { funnel: { name: 'No', stages: stages } }, headers: agent.create_new_auth_token, as: :json
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
     patch "#{url}/#{own.id}", params: { funnel: { name: 'No' } }, headers: agent.create_new_auth_token, as: :json
-    expect(response).to have_http_status(:forbidden)
+    expect(response).to have_http_status(:unauthorized)
   end
 
   it 'does not update another account funnel' do
