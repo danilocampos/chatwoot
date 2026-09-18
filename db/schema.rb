@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_09_14_205353) do
+ActiveRecord::Schema[7.2].define(version: 2026_09_18_040000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -1407,6 +1407,15 @@ ActiveRecord::Schema[7.2].define(version: 2026_09_14_205353) do
     t.index ["user_id"], name: "index_internal_chat_reactions_on_user_id"
   end
 
+  create_table "kanban_funnels", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.jsonb "stages", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_kanban_funnels_on_account_id"
+  end
+
   create_table "labels", force: :cascade do |t|
     t.string "title"
     t.text "description"
@@ -1902,6 +1911,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_09_14_205353) do
   add_foreign_key "internal_chat_polls", "internal_chat_messages"
   add_foreign_key "internal_chat_reactions", "internal_chat_messages"
   add_foreign_key "internal_chat_reactions", "users", on_delete: :cascade
+  add_foreign_key "kanban_funnels", "accounts"
   add_foreign_key "recurring_scheduled_messages", "accounts"
   add_foreign_key "recurring_scheduled_messages", "conversations"
   add_foreign_key "recurring_scheduled_messages", "inboxes"
