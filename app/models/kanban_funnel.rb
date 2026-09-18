@@ -12,12 +12,14 @@ class KanbanFunnel < ApplicationRecord
   private
 
   def validate_stages
-    valid = stages.is_a?(Array) && stages.length.between?(1, 20) && stages.all? do |stage|
-      stage.is_a?(Hash) && stage['id'].is_a?(String) && stage['id'].match?(/\A[a-zA-Z0-9_-]{1,64}\z/) &&
-        stage['name'].is_a?(String) && stage['name'].strip.length.between?(1, 80)
-    end
+    valid = stages.is_a?(Array) && stages.length.between?(1, 20) && stages.all? { |stage| valid_stage?(stage) }
     valid &&= stage_ids.uniq.length == stages.length
     errors.add(:stages, :invalid) unless valid
+  end
+
+  def valid_stage?(stage)
+    stage.is_a?(Hash) && stage['id'].is_a?(String) && stage['id'].match?(/\A[a-zA-Z0-9_-]{1,64}\z/) &&
+      stage['name'].is_a?(String) && stage['name'].strip.length.between?(1, 80)
   end
 
   def preserve_occupied_stages
@@ -26,7 +28,7 @@ class KanbanFunnel < ApplicationRecord
     removed = stages_in_database.pluck('id') - stage_ids
     return if removed.empty?
     return unless account.conversations.where("custom_attributes->>'kanban_funnel_id' = ?", id.to_s)
-                         .where("custom_attributes->>'kanban_status' IN (?)", removed).exists?
+                         .exists?(["custom_attributes->>'kanban_status' IN (?)", removed])
 
     errors.add(:stages, :invalid)
   end

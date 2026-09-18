@@ -32,8 +32,8 @@ RSpec.describe 'Kanban API', type: :request do
       expect(response.parsed_body.dig('stats', 'total')).to eq(0)
       get "/api/v1/accounts/#{account.id}/kanban", params: { funnel_id: funnel.id }, headers: agent.create_new_auth_token, as: :json
       expect(response.parsed_body.dig('kanban_data', 'proposal').pluck('id')).to eq([conversation.display_id])
-      get "/api/v1/accounts/#{account.id}/kanban/export", params: { funnel_id: funnel.id, status: 'proposal' },
-                                                       headers: agent.create_new_auth_token, as: :json
+      get "/api/v1/accounts/#{account.id}/kanban/export",
+          params: { funnel_id: funnel.id, status: 'proposal' }, headers: agent.create_new_auth_token, as: :json
       expect(response.parsed_body['data'].pluck('conversation_id')).to eq([conversation.display_id])
 
       put "/api/v1/accounts/#{account.id}/kanban/#{conversation.display_id}/move",
