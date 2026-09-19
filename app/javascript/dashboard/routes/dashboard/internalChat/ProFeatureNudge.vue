@@ -22,7 +22,7 @@ const { t } = useI18n();
 const { isSuperAdmin, isAdmin } = useInternalChatPro();
 
 const dialogRef = ref(null);
-const upgradeUrl = 'https://fazer.ai/kanban';
+const upgradeUrl = 'https://github.com/danilocampos/chatwoot';
 
 const descriptionKey = computed(() => {
   const map = {

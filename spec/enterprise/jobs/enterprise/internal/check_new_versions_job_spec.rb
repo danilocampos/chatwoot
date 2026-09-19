@@ -18,7 +18,7 @@ RSpec.describe Internal::CheckNewVersionsJob do
   subject(:job) { described_class.perform_now }
 
   let(:reconcile_plan_config_service) { instance_double(Internal::ReconcilePlanConfigService) }
-  let(:releases_url) { 'https://api.github.com/repos/fazer-ai/chatwoot/releases/latest' }
+  let(:releases_url) { 'https://api.github.com/repos/danilocampos/chatwoot/releases/latest' }
 
   before do
     allow(Internal::ReconcilePlanConfigService).to receive(:new).and_return(reconcile_plan_config_service)
