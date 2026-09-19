@@ -100,6 +100,12 @@ conversations:
       - "not_equal_to"
       - "contains"
       - "does_not_contain"
+  group_type:
+    attribute_type: "standard"
+    data_type: "text"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
   created_at:
     attribute_type: "standard"
     data_type: "date"
@@ -234,5 +240,17 @@ messages:
       - "not_equal_to"
       - "contains"
       - "does_not_contain"
+  sender_id:
+    attribute_type: "standard"
+    data_type: "numeric"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
+  sender_type:
+    attribute_type: "standard"
+    data_type: "text"
+    filter_operators:
+      - "equal_to"
+      - "not_equal_to"
 
 ### ----- End of Message Filters ----- ###

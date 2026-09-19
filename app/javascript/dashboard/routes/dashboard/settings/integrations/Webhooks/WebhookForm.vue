@@ -1,12 +1,14 @@
 <script>
 import { useVuelidate } from '@vuelidate/core';
-import { required, url, minLength } from '@vuelidate/validators';
+import { required, url, minLength, or } from '@vuelidate/validators';
 import wootConstants from 'dashboard/constants/globals';
 import { getI18nKey } from 'dashboard/routes/dashboard/settings/helper/settingsHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useAlert } from 'dashboard/composables';
 import { useConfig } from 'dashboard/composables/useConfig';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import MultiselectDropdown from 'shared/components/ui/MultiselectDropdown.vue';
+import { useMapGetter } from 'dashboard/composables/store';
 
 const { EXAMPLE_WEBHOOK_URL } = wootConstants;
 
@@ -15,17 +17,38 @@ const SUPPORTED_WEBHOOK_EVENTS = [
   'conversation_status_changed',
   'conversation_updated',
   'message_created',
+  'message_incoming',
+  'message_outgoing',
   'message_updated',
   'webwidget_triggered',
   'contact_created',
   'contact_updated',
   'conversation_typing_on',
   'conversation_typing_off',
+  'conversation_recording',
+  'provider_event_received',
+  'internal_chat_message_created',
+  'internal_chat_message_updated',
+  'internal_chat_message_deleted',
+  'internal_chat_channel_updated',
 ];
+
+const localhostUrl = value => {
+  if (!value) {
+    return true;
+  }
+  const isRunningOnLocalhost = ['localhost', '127.0.0.1'].includes(
+    window.location.hostname
+  );
+  const localUrlPattern =
+    /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/.*)?$/i;
+  return isRunningOnLocalhost && localUrlPattern.test(value);
+};
 
 export default {
   components: {
     NextButton,
+    MultiselectDropdown,
   },
   props: {
     value: {
@@ -40,16 +63,23 @@ export default {
       type: String,
       required: true,
     },
+    isEditing: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['submit', 'cancel'],
   setup() {
-    return { v$: useVuelidate() };
+    return {
+      v$: useVuelidate(),
+      inboxes: useMapGetter('inboxes/getInboxes'),
+    };
   },
   validations: {
     url: {
       required,
       minLength: minLength(7),
-      url,
+      url: or(localhostUrl, url),
     },
     subscriptions: {
       required,
@@ -59,6 +89,7 @@ export default {
     const { inboxEventsEnabled } = useConfig();
     return {
       url: this.value.url || '',
+      assignedInbox: this.value.inbox || null,
       name: this.value.name || '',
       subscriptions: this.value.subscriptions || [],
       secretVisible: false,
@@ -70,6 +101,20 @@ export default {
   computed: {
     hasSecret() {
       return !!this.value.secret;
+    },
+    inboxesList() {
+      if (this.assignedInbox?.id) {
+        return [
+          {
+            id: 0,
+            name: this.$t(
+              'INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.PLACEHOLDER'
+            ),
+          },
+          ...this.inboxes,
+        ];
+      }
+      return this.inboxes;
     },
     webhookURLInputPlaceholder() {
       return this.$t(
@@ -87,6 +132,7 @@ export default {
     onSubmit() {
       this.$emit('submit', {
         url: this.url,
+        inbox_id: this.assignedInbox?.id || null,
         name: this.name,
         subscriptions: this.subscriptions,
       });
@@ -94,6 +140,9 @@ export default {
     async copySecret() {
       await copyTextToClipboard(this.value.secret);
       useAlert(this.$t('INTEGRATION_SETTINGS.WEBHOOK.SECRET.COPY_SUCCESS'));
+    },
+    onClickAssignInbox(inbox) {
+      this.assignedInbox = inbox;
     },
     getI18nKey,
   },
@@ -109,12 +158,36 @@ export default {
           v-model="url"
           type="text"
           name="url"
+          :disabled="isEditing"
           :placeholder="webhookURLInputPlaceholder"
           @input="v$.url.$touch"
         />
         <span v-if="v$.url.$error" class="message">
           {{ $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.END_POINT.ERROR') }}
         </span>
+      </label>
+      <label>
+        {{ $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.LABEL') }}
+        <div class="multiselect-wrap--small">
+          <MultiselectDropdown
+            :options="inboxesList"
+            :selected-item="assignedInbox"
+            :multiselector-title="
+              $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.TITLE')
+            "
+            :multiselector-placeholder="
+              $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.PLACEHOLDER')
+            "
+            :no-search-result="
+              $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.NO_RESULTS')
+            "
+            :input-placeholder="
+              $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.INBOX.INPUT_PLACEHOLDER')
+            "
+            :disabled="isEditing"
+            @select="onClickAssignInbox"
+          />
+        </div>
       </label>
       <label>
         {{ $t('INTEGRATION_SETTINGS.WEBHOOK.FORM.NAME.LABEL') }}
@@ -184,7 +257,6 @@ export default {
         </div>
       </div>
     </div>
-
     <div class="flex flex-row justify-end w-full gap-2 px-0 py-2">
       <NextButton
         faded

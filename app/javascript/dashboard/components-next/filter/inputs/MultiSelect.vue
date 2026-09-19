@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useElementBounding, useWindowSize } from '@vueuse/core';
 import { picoSearch } from '@chatwoot/pico-search';
 import { DROPDOWN_SEARCH_THRESHOLD } from '../helper/filterHelper';
 import Icon from 'next/icon/Icon.vue';
@@ -32,6 +33,24 @@ const { t } = useI18n();
 const selected = defineModel({
   type: [Array, String],
   required: true,
+});
+
+const triggerRef = ref(null);
+const dropdownRef = ref(null);
+
+const { top } = useElementBounding(triggerRef);
+const { height } = useWindowSize();
+const { height: dropdownHeight } = useElementBounding(dropdownRef);
+
+// Open the menu upward when there isn't enough room below the trigger, so it
+// never overflows past the viewport bottom (e.g. action selects low in a tall modal).
+const dropdownPosition = computed(() => {
+  // Matches the default `dropdownMaxHeight` prop (`max-h-80` = 320px); used as a
+  // fallback before the menu has been measured. 20px keeps a small gap below.
+  const DROPDOWN_MAX_HEIGHT = 320;
+  const menuHeight = (dropdownHeight.value || DROPDOWN_MAX_HEIGHT) + 20;
+  const spaceBelow = height.value - top.value;
+  return spaceBelow < menuHeight ? 'bottom-0' : 'top-0';
 });
 
 const searchTerm = ref('');
@@ -116,6 +135,7 @@ const toggleOption = option => {
     <template #trigger="{ toggle }">
       <button
         v-if="hasItems"
+        ref="triggerRef"
         class="bg-n-alpha-2 py-2 rounded-lg h-8 flex items-center px-0 max-w-full"
         @click="toggleDropdown(toggle)"
       >
@@ -151,7 +171,14 @@ const toggleOption = option => {
           <Icon icon="i-lucide-plus" />
         </div>
       </button>
-      <Button v-else sm slate faded @click="toggleDropdown(toggle)">
+      <Button
+        v-else
+        ref="triggerRef"
+        sm
+        slate
+        faded
+        @click="toggleDropdown(toggle)"
+      >
         <template #icon>
           <Icon icon="i-lucide-plus" class="text-n-slate-11" />
         </template>
@@ -160,7 +187,12 @@ const toggleOption = option => {
         }}</span>
       </Button>
     </template>
-    <DropdownBody class="top-0 min-w-48 z-50" strong>
+    <DropdownBody
+      ref="dropdownRef"
+      class="min-w-48 z-50"
+      :class="dropdownPosition"
+      strong
+    >
       <div v-if="showSearch" class="relative">
         <Icon class="absolute size-4 start-2 top-2" icon="i-lucide-search" />
         <input

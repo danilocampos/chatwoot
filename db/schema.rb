@@ -10,13 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_09_18_040000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
+  enable_extension "unaccent"
   enable_extension "vector"
+
+  # Custom SQL functions (required before index creation)
+  execute <<~SQL
+    CREATE OR REPLACE FUNCTION f_unaccent(text)
+      RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+      AS $func$ SELECT public.unaccent('public.unaccent', $1) $func$
+  SQL
 
   create_table "access_tokens", force: :cascade do |t|
     t.string "owner_type"
@@ -121,6 +129,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "account_id"
+  end
+
+  create_table "agent_bot_observers", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "agent_bot_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_agent_bot_observers_on_account_id"
+    t.index ["agent_bot_id"], name: "index_agent_bot_observers_on_agent_bot_id"
+    t.index ["inbox_id", "agent_bot_id"], name: "index_agent_bot_observers_on_inbox_id_and_agent_bot_id", unique: true
   end
 
   create_table "agent_bots", force: :cascade do |t|
@@ -505,8 +524,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.integer "status", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_captain_faq_suggestions_on_account_id"
     t.index ["account_id", "assistant_id", "status", "language"], name: "idx_cap_faq_suggestions_on_account_assistant_status_language"
+    t.index ["account_id"], name: "index_captain_faq_suggestions_on_account_id"
     t.index ["assistant_id"], name: "index_captain_faq_suggestions_on_assistant_id"
     t.index ["embedding"], name: "vector_idx_captain_faq_suggestions_embedding", opclass: :vector_cosine_ops, using: :ivfflat
   end
@@ -611,8 +630,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.boolean "smtp_enable_ssl_tls", default: false
     t.jsonb "provider_config", default: {}
     t.string "provider"
-    t.string "imap_authentication", default: "plain"
     t.boolean "verified_for_sending", default: false, null: false
+    t.string "imap_authentication", default: "plain"
+    t.boolean "continue_open_conversation", default: false, null: false
     t.index ["email"], name: "index_channel_email_on_email", unique: true
     t.index ["forward_to_email"], name: "index_channel_email_on_forward_to_email", unique: true
   end
@@ -746,13 +766,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.datetime "updated_at", null: false
     t.jsonb "message_templates", default: {}
     t.datetime "message_templates_last_updated", precision: nil
+    t.jsonb "provider_connection", default: {}
     t.jsonb "phone_number_health", default: {}, null: false
     t.datetime "phone_number_health_checked_at"
     t.string "phone_number_health_error", limit: 500
-    t.text "provider_credentials"
-    t.jsonb "provider_connection", default: {}, null: false
-    t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
+    t.index "((provider_config ->> 'session_id'::text))", name: "index_channel_whatsapp_session_id", unique: true, where: "((provider)::text = ANY (ARRAY[('native'::character varying)::text, ('uazapi'::character varying)::text]))"
+    t.index "((provider_connection ->> 'connection'::text))", name: "index_channel_whatsapp_connection_state", where: "((provider)::text = ANY (ARRAY[('baileys'::character varying)::text, ('zapi'::character varying)::text, ('native'::character varying)::text, ('uazapi'::character varying)::text]))"
     t.index ["phone_number"], name: "index_channel_whatsapp_on_phone_number", unique: true
+    t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
+    t.index ["provider_connection"], name: "index_channel_whatsapp_provider_connection", where: "((provider)::text = ANY (ARRAY[('baileys'::character varying)::text, ('zapi'::character varying)::text]))", using: :gin
   end
 
   create_table "companies", force: :cascade do |t|
@@ -762,7 +784,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.integer "contacts_count"
+    t.integer "contacts_count", default: 0, null: false
     t.jsonb "additional_attributes", default: {}
     t.jsonb "custom_attributes", default: {}
     t.datetime "last_activity_at", precision: nil
@@ -779,6 +801,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.datetime "updated_at", null: false
     t.boolean "hmac_verified", default: false
     t.string "pubsub_token"
+    t.datetime "group_left_at"
     t.index ["contact_id"], name: "index_contact_inboxes_on_contact_id"
     t.index ["inbox_id", "source_id"], name: "index_contact_inboxes_on_inbox_id_and_source_id", unique: true
     t.index ["inbox_id"], name: "index_contact_inboxes_on_inbox_id"
@@ -804,9 +827,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.string "country_code", default: ""
     t.boolean "blocked", default: false, null: false
     t.bigint "company_id"
+    t.integer "group_type", default: 0, null: false
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"
     t.index ["account_id", "contact_type"], name: "index_contacts_on_account_id_and_contact_type"
     t.index ["account_id", "email", "phone_number", "identifier"], name: "index_contacts_on_nonempty_fields", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
+    t.index ["account_id", "group_type"], name: "index_contacts_on_account_id_and_group_type"
     t.index ["account_id", "last_activity_at"], name: "index_contacts_on_account_id_and_last_activity_at", order: { last_activity_at: "DESC NULLS LAST" }
     t.index ["account_id"], name: "index_contacts_on_account_id"
     t.index ["account_id"], name: "index_resolved_contact_account_id", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
@@ -861,6 +886,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.index ["user_id"], name: "index_conversation_participants_on_user_id"
   end
 
+  create_table "conversation_pins", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "conversation_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_conversation_pins_on_account_id"
+    t.index ["conversation_id"], name: "index_conversation_pins_on_conversation_id"
+    t.index ["user_id", "conversation_id"], name: "index_conversation_pins_on_user_id_and_conversation_id", unique: true
+  end
+
   create_table "conversations", id: :serial, force: :cascade do |t|
     t.integer "account_id", null: false
     t.integer "inbox_id", null: false
@@ -868,7 +904,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.integer "assignee_id"
     t.datetime "created_at", precision: nil, null: false
     t.datetime "updated_at", precision: nil, null: false
-    t.bigint "contact_id"
+    t.bigint "contact_id", null: false
     t.integer "display_id", null: false
     t.datetime "contact_last_seen_at", precision: nil
     t.datetime "agent_last_seen_at", precision: nil
@@ -890,7 +926,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.bigint "assignee_agent_bot_id"
     t.string "ai_assignee_type"
     t.datetime "status_changed_at"
+    t.integer "group_type", default: 0, null: false
+    t.integer "redirect_origin_display_id"
     t.index ["account_id", "display_id"], name: "index_conversations_on_account_id_and_display_id", unique: true
+    t.index ["account_id", "group_type"], name: "index_conversations_on_account_id_and_group_type"
     t.index ["account_id", "id"], name: "index_conversations_on_id_and_account_id"
     t.index ["account_id", "inbox_id", "status", "assignee_id"], name: "conv_acid_inbid_stat_asgnid_idx"
     t.index ["account_id", "status", "created_at"], name: "index_conversations_on_account_id_status_created_at"
@@ -902,6 +941,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.index ["created_at"], name: "index_conversations_on_created_at"
     t.index ["first_reply_created_at"], name: "index_conversations_on_first_reply_created_at"
     t.index ["identifier", "account_id"], name: "index_conversations_on_identifier_and_account_id"
+    t.index ["inbox_id", "group_type"], name: "index_conversations_on_inbox_id_and_group_type"
     t.index ["inbox_id"], name: "index_conversations_on_inbox_id"
     t.index ["priority"], name: "index_conversations_on_priority"
     t.index ["status", "account_id"], name: "index_conversations_on_status_and_account_id"
@@ -980,6 +1020,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.bigint "user_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "visibility", default: 0, null: false
+    t.index ["account_id", "filter_type", "visibility", "user_id"], name: "index_custom_filters_on_account_type_visibility_user"
     t.index ["account_id"], name: "index_custom_filters_on_account_id"
     t.index ["user_id"], name: "index_custom_filters_on_user_id"
   end
@@ -1001,6 +1043,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.bigint "user_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "show_on_sidebar", default: false, null: false
     t.index ["account_id"], name: "index_dashboard_apps_on_account_id"
     t.index ["user_id"], name: "index_dashboard_apps_on_user_id"
   end
@@ -1092,10 +1135,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "inbox_id"
-    t.index ["account_id", "name", "template_type", "locale"], name: "index_email_templates_on_account_scope", unique: true, where: "(account_id IS NOT NULL) AND (inbox_id IS NULL)"
+    t.index ["account_id", "name", "template_type", "locale"], name: "index_email_templates_on_account_scope", unique: true, where: "((account_id IS NOT NULL) AND (inbox_id IS NULL))"
     t.index ["inbox_id", "name", "template_type", "locale"], name: "index_email_templates_on_inbox_scope", unique: true, where: "(inbox_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_email_templates_on_inbox_id"
-    t.index ["name", "template_type", "locale"], name: "index_email_templates_on_installation_scope", unique: true, where: "(account_id IS NULL) AND (inbox_id IS NULL)"
+    t.index ["name", "template_type", "locale"], name: "index_email_templates_on_installation_scope", unique: true, where: "((account_id IS NULL) AND (inbox_id IS NULL))"
   end
 
   create_table "folders", force: :cascade do |t|
@@ -1104,6 +1147,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.string "name"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "group_members", force: :cascade do |t|
+    t.bigint "group_contact_id", null: false
+    t.bigint "contact_id", null: false
+    t.integer "role", default: 0, null: false
+    t.boolean "is_active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["contact_id"], name: "index_group_members_on_contact_id"
+    t.index ["group_contact_id", "contact_id"], name: "index_group_members_on_group_contact_id_and_contact_id", unique: true
+    t.index ["group_contact_id", "is_active"], name: "index_group_members_on_group_contact_id_and_is_active"
+    t.index ["group_contact_id"], name: "index_group_members_on_group_contact_id"
   end
 
   create_table "inbox_assignment_policies", force: :cascade do |t|
@@ -1135,6 +1191,18 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.index ["inbox_id"], name: "index_inbox_members_on_inbox_id"
   end
 
+  create_table "inbox_signatures", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "inbox_id", null: false
+    t.text "message_signature", null: false
+    t.string "signature_position", default: "top", null: false
+    t.string "signature_separator", default: "blank", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["inbox_id"], name: "index_inbox_signatures_on_inbox_id"
+    t.index ["user_id", "inbox_id"], name: "index_inbox_signatures_on_user_id_and_inbox_id", unique: true
+  end
+
   create_table "inboxes", id: :serial, force: :cascade do |t|
     t.integer "channel_id", null: false
     t.integer "account_id", null: false
@@ -1158,6 +1226,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.integer "sender_name_type", default: 0, null: false
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
+    t.boolean "prevent_assignment_takeover", default: false, null: false
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
     t.index ["portal_id"], name: "index_inboxes_on_portal_id"
@@ -1184,6 +1253,167 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.jsonb "settings", default: {}
+  end
+
+  create_table "internal_chat_categories", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name"], name: "index_internal_chat_categories_on_account_id_and_name", unique: true
+    t.index ["account_id", "position"], name: "index_internal_chat_categories_on_account_id_and_position"
+    t.index ["account_id"], name: "index_internal_chat_categories_on_account_id"
+  end
+
+  create_table "internal_chat_channel_members", force: :cascade do |t|
+    t.bigint "internal_chat_channel_id", null: false
+    t.bigint "user_id", null: false
+    t.integer "role", default: 0, null: false
+    t.boolean "muted", default: false, null: false
+    t.datetime "last_read_at"
+    t.boolean "favorited", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "hidden", default: false, null: false
+    t.index ["internal_chat_channel_id", "user_id"], name: "idx_ic_channel_members_channel_user", unique: true
+    t.index ["user_id", "favorited"], name: "idx_ic_channel_members_user_favorited"
+    t.index ["user_id"], name: "index_internal_chat_channel_members_on_user_id"
+  end
+
+  create_table "internal_chat_channel_teams", force: :cascade do |t|
+    t.bigint "internal_chat_channel_id", null: false
+    t.bigint "team_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["internal_chat_channel_id", "team_id"], name: "idx_ic_channel_teams_channel_team", unique: true
+    t.index ["team_id"], name: "index_internal_chat_channel_teams_on_team_id"
+  end
+
+  create_table "internal_chat_channels", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "category_id"
+    t.string "name"
+    t.text "description"
+    t.integer "channel_type", default: 0, null: false
+    t.integer "status", default: 0, null: false
+    t.bigint "created_by_id"
+    t.datetime "last_activity_at", null: false
+    t.integer "messages_count", default: 0
+    t.uuid "uuid", default: -> { "gen_random_uuid()" }, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "f_unaccent((name)::text) gin_trgm_ops", name: "idx_ic_channels_name_unaccent_trgm", using: :gin
+    t.index "f_unaccent(description) gin_trgm_ops", name: "idx_ic_channels_description_unaccent_trgm", using: :gin
+    t.index ["account_id", "category_id"], name: "index_internal_chat_channels_on_account_id_and_category_id"
+    t.index ["account_id", "channel_type"], name: "index_internal_chat_channels_on_account_id_and_channel_type"
+    t.index ["account_id", "status"], name: "index_internal_chat_channels_on_account_id_and_status"
+    t.index ["account_id"], name: "index_internal_chat_channels_on_account_id"
+    t.index ["category_id"], name: "index_internal_chat_channels_on_category_id"
+    t.index ["uuid"], name: "index_internal_chat_channels_on_uuid", unique: true
+  end
+
+  create_table "internal_chat_drafts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "internal_chat_channel_id", null: false
+    t.text "content", null: false
+    t.bigint "parent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_internal_chat_drafts_on_account_id"
+    t.index ["internal_chat_channel_id"], name: "idx_ic_drafts_channel"
+    t.index ["user_id", "internal_chat_channel_id", "parent_id"], name: "idx_ic_drafts_user_channel_thread", unique: true, where: "(parent_id IS NOT NULL)"
+    t.index ["user_id", "internal_chat_channel_id"], name: "idx_ic_drafts_user_channel_root", unique: true, where: "(parent_id IS NULL)"
+    t.index ["user_id", "updated_at"], name: "idx_ic_drafts_user_updated"
+    t.index ["user_id"], name: "index_internal_chat_drafts_on_user_id"
+  end
+
+  create_table "internal_chat_message_attachments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "internal_chat_message_id", null: false
+    t.integer "file_type", default: 0, null: false
+    t.string "external_url"
+    t.string "extension"
+    t.jsonb "meta", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_internal_chat_message_attachments_on_account_id"
+    t.index ["internal_chat_message_id"], name: "idx_ic_msg_attachments_message"
+  end
+
+  create_table "internal_chat_messages", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "internal_chat_channel_id", null: false
+    t.bigint "sender_id"
+    t.text "content"
+    t.integer "content_type", default: 0, null: false
+    t.bigint "parent_id"
+    t.jsonb "content_attributes", default: {}
+    t.string "echo_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.integer "replies_count", default: 0, null: false
+    t.index "f_unaccent(content) gin_trgm_ops", name: "idx_ic_messages_content_unaccent_trgm", using: :gin
+    t.index ["account_id", "created_at"], name: "idx_ic_messages_account_created"
+    t.index ["account_id"], name: "index_internal_chat_messages_on_account_id"
+    t.index ["internal_chat_channel_id", "created_at"], name: "idx_ic_messages_channel_created"
+    t.index ["internal_chat_channel_id"], name: "index_internal_chat_messages_on_internal_chat_channel_id"
+    t.index ["parent_id"], name: "index_internal_chat_messages_on_parent_id"
+    t.index ["sender_id"], name: "index_internal_chat_messages_on_sender_id"
+  end
+
+  create_table "internal_chat_poll_options", force: :cascade do |t|
+    t.bigint "internal_chat_poll_id", null: false
+    t.string "text", null: false
+    t.string "emoji"
+    t.string "image_url"
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.integer "votes_count", default: 0, null: false
+    t.index ["internal_chat_poll_id", "position"], name: "idx_ic_poll_options_poll_pos"
+    t.index ["internal_chat_poll_id"], name: "idx_ic_poll_options_poll"
+  end
+
+  create_table "internal_chat_poll_votes", force: :cascade do |t|
+    t.bigint "internal_chat_poll_option_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "created_at", null: false
+    t.index ["internal_chat_poll_option_id", "user_id"], name: "idx_ic_poll_votes_option_user", unique: true
+    t.index ["internal_chat_poll_option_id"], name: "idx_ic_poll_votes_option"
+    t.index ["user_id"], name: "index_internal_chat_poll_votes_on_user_id"
+  end
+
+  create_table "internal_chat_polls", force: :cascade do |t|
+    t.bigint "internal_chat_message_id", null: false
+    t.string "question", null: false
+    t.boolean "multiple_choice", default: false, null: false
+    t.boolean "public_results", default: true, null: false
+    t.boolean "allow_revote", default: true, null: false
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["internal_chat_message_id"], name: "idx_ic_polls_message"
+    t.index ["internal_chat_message_id"], name: "idx_ic_polls_message_unique", unique: true
+  end
+
+  create_table "internal_chat_reactions", force: :cascade do |t|
+    t.bigint "internal_chat_message_id", null: false
+    t.bigint "user_id", null: false
+    t.string "emoji", null: false
+    t.datetime "created_at", null: false
+    t.index ["internal_chat_message_id", "user_id", "emoji"], name: "idx_ic_reactions_message_user_emoji", unique: true
+    t.index ["internal_chat_message_id"], name: "idx_ic_reactions_message"
+    t.index ["user_id"], name: "index_internal_chat_reactions_on_user_id"
+  end
+
+  create_table "kanban_funnels", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.jsonb "stages", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_kanban_funnels_on_account_id"
   end
 
   create_table "labels", force: :cascade do |t|
@@ -1370,6 +1600,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.boolean "archived", default: false
     t.bigint "channel_web_widget_id"
     t.jsonb "ssl_settings", default: {}, null: false
+    t.text "custom_head_html"
+    t.text "custom_body_html"
     t.index ["channel_web_widget_id"], name: "index_portals_on_channel_web_widget_id"
     t.index ["custom_domain"], name: "index_portals_on_custom_domain", unique: true
     t.index ["slug"], name: "index_portals_on_slug", unique: true
@@ -1381,6 +1613,29 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.index ["portal_id", "user_id"], name: "index_portals_members_on_portal_id_and_user_id", unique: true
     t.index ["portal_id"], name: "index_portals_members_on_portal_id"
     t.index ["user_id"], name: "index_portals_members_on_user_id"
+  end
+
+  create_table "recurring_scheduled_messages", force: :cascade do |t|
+    t.text "content"
+    t.jsonb "template_params", default: {}
+    t.jsonb "recurrence_rule", default: {}, null: false
+    t.integer "status", default: 0, null: false
+    t.integer "occurrences_sent", default: 0, null: false
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "author_type", null: false
+    t.bigint "author_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.boolean "hold_on_reply", default: false, null: false
+    t.index ["account_id", "status"], name: "idx_recurring_sched_msgs_on_account_status"
+    t.index ["account_id"], name: "index_recurring_scheduled_messages_on_account_id"
+    t.index ["author_type", "author_id"], name: "index_recurring_scheduled_messages_on_author"
+    t.index ["conversation_id", "status"], name: "idx_recurring_sched_msgs_on_conversation_status"
+    t.index ["conversation_id"], name: "index_recurring_scheduled_messages_on_conversation_id"
+    t.index ["inbox_id"], name: "index_recurring_scheduled_messages_on_inbox_id"
+    t.index ["status"], name: "idx_recurring_sched_msgs_on_status"
   end
 
   create_table "related_categories", force: :cascade do |t|
@@ -1428,6 +1683,35 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.index ["account_id", "date", "dimension_type", "dimension_id", "metric"], name: "index_rollup_unique_key", unique: true
     t.index ["account_id", "dimension_type", "date"], name: "index_rollup_summary"
     t.index ["account_id", "metric", "date"], name: "index_rollup_timeseries"
+  end
+
+  create_table "scheduled_messages", force: :cascade do |t|
+    t.text "content"
+    t.jsonb "template_params", default: {}
+    t.datetime "scheduled_at"
+    t.integer "status", default: 0, null: false
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "author_type"
+    t.bigint "author_id"
+    t.bigint "message_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "recurring_scheduled_message_id"
+    t.boolean "hold_on_reply", default: false, null: false
+    t.index ["account_id", "status"], name: "index_scheduled_messages_on_account_id_and_status"
+    t.index ["account_id"], name: "index_scheduled_messages_on_account_id"
+    t.index ["author_type", "author_id", "status"], name: "idx_on_author_type_author_id_status_6997d67ef6"
+    t.index ["author_type", "author_id"], name: "index_scheduled_messages_on_author"
+    t.index ["conversation_id", "scheduled_at"], name: "index_scheduled_messages_on_conversation_id_and_scheduled_at"
+    t.index ["conversation_id", "status"], name: "index_scheduled_messages_on_conversation_id_and_status"
+    t.index ["conversation_id"], name: "index_scheduled_messages_on_conversation_id"
+    t.index ["inbox_id", "status"], name: "index_scheduled_messages_on_inbox_id_and_status"
+    t.index ["inbox_id"], name: "index_scheduled_messages_on_inbox_id"
+    t.index ["message_id"], name: "index_scheduled_messages_on_message_id"
+    t.index ["recurring_scheduled_message_id"], name: "index_scheduled_messages_on_recurring_scheduled_message_id"
+    t.index ["status", "scheduled_at"], name: "index_scheduled_messages_on_status_and_scheduled_at"
   end
 
   create_table "sla_events", force: :cascade do |t|
@@ -1559,8 +1843,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.text "message_signature"
     t.string "otp_secret"
     t.integer "consumed_timestep"
-    t.boolean "otp_required_for_login", default: false
+    t.boolean "otp_required_for_login", default: false, null: false
     t.text "otp_backup_codes"
+    t.index "f_unaccent((name)::text) gin_trgm_ops", name: "idx_users_name_unaccent_trgm", using: :gin
     t.index ["email"], name: "index_users_on_email"
     t.index ["otp_required_for_login"], name: "index_users_on_otp_required_for_login"
     t.index ["otp_secret"], name: "index_users_on_otp_secret", unique: true
@@ -1580,16 +1865,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
     t.string "name"
     t.string "secret"
     t.index ["account_id", "url"], name: "index_webhooks_on_account_id_and_url", unique: true
-  end
-
-  create_table "whatsapp_provider_configurations", force: :cascade do |t|
-    t.string "provider", null: false
-    t.boolean "enabled", default: false, null: false
-    t.jsonb "settings", default: {}, null: false
-    t.text "credentials"
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["provider"], name: "index_whatsapp_provider_configurations_on_provider", unique: true
   end
 
   create_table "working_hours", force: :cascade do |t|
@@ -1614,7 +1889,37 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_120000) do
   add_foreign_key "campaign_recipients", "campaigns", on_delete: :cascade
   add_foreign_key "campaign_recipients", "contacts", on_delete: :cascade
   add_foreign_key "campaign_recipients", "inboxes", on_delete: :cascade
+  add_foreign_key "group_members", "contacts"
+  add_foreign_key "group_members", "contacts", column: "group_contact_id"
   add_foreign_key "inboxes", "portals"
+  add_foreign_key "internal_chat_channel_members", "internal_chat_channels"
+  add_foreign_key "internal_chat_channel_members", "users", on_delete: :cascade
+  add_foreign_key "internal_chat_channel_teams", "internal_chat_channels"
+  add_foreign_key "internal_chat_channel_teams", "teams"
+  add_foreign_key "internal_chat_channels", "internal_chat_categories", column: "category_id"
+  add_foreign_key "internal_chat_channels", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "internal_chat_drafts", "internal_chat_channels"
+  add_foreign_key "internal_chat_drafts", "users", on_delete: :cascade
+  add_foreign_key "internal_chat_message_attachments", "internal_chat_messages"
+  add_foreign_key "internal_chat_messages", "accounts", on_delete: :cascade
+  add_foreign_key "internal_chat_messages", "internal_chat_channels"
+  add_foreign_key "internal_chat_messages", "internal_chat_messages", column: "parent_id"
+  add_foreign_key "internal_chat_messages", "users", column: "sender_id", on_delete: :nullify
+  add_foreign_key "internal_chat_poll_options", "internal_chat_polls"
+  add_foreign_key "internal_chat_poll_votes", "internal_chat_poll_options"
+  add_foreign_key "internal_chat_poll_votes", "users", on_delete: :cascade
+  add_foreign_key "internal_chat_polls", "internal_chat_messages"
+  add_foreign_key "internal_chat_reactions", "internal_chat_messages"
+  add_foreign_key "internal_chat_reactions", "users", on_delete: :cascade
+  add_foreign_key "kanban_funnels", "accounts"
+  add_foreign_key "recurring_scheduled_messages", "accounts"
+  add_foreign_key "recurring_scheduled_messages", "conversations"
+  add_foreign_key "recurring_scheduled_messages", "inboxes"
+  add_foreign_key "scheduled_messages", "accounts"
+  add_foreign_key "scheduled_messages", "conversations"
+  add_foreign_key "scheduled_messages", "inboxes"
+  add_foreign_key "scheduled_messages", "messages"
+  add_foreign_key "scheduled_messages", "recurring_scheduled_messages"
   add_foreign_key "user_sessions", "users"
   create_trigger("accounts_after_insert_row_tr", :generated => true, :compatibility => 1).
       on("accounts").

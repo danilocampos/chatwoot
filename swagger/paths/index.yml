@@ -274,6 +274,33 @@
   $ref: ./application/contact_inboxes/create.yml
 /api/v1/accounts/{account_id}/contacts/{id}/contactable_inboxes:
   $ref: ./application/contactable_inboxes/get.yml
+/api/v1/accounts/{account_id}/contacts/{id}/sync_group:
+  $ref: ./application/contacts/sync_group.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_members:
+  $ref: ./application/contacts/group_members.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_members/{member_id}:
+  $ref: ./application/contacts/group_members_member.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_metadata:
+  $ref: ./application/contacts/group_metadata.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_invite:
+  $ref: ./application/contacts/group_invite.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_invite/revoke:
+  $ref: ./application/contacts/group_invite_revoke.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_join_requests:
+  $ref: ./application/contacts/group_join_requests.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_join_requests/handle:
+  $ref: ./application/contacts/group_join_requests_handle.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_admin:
+  $ref: ./application/contacts/group_admin.yml
+/api/v1/accounts/{account_id}/contacts/{id}/group_admin/leave:
+  $ref: ./application/contacts/group_admin_leave.yml
+
+# Groups
+/api/v1/accounts/{account_id}/groups:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  post:
+    $ref: ./application/groups/create.yml
 
 # Contact Merge
 /api/v1/accounts/{account_id}/actions/contact_merge:
@@ -342,6 +369,11 @@
   $ref: ./application/conversation/meta.yml
 /api/v1/accounts/{account_id}/conversations:
   $ref: ./application/conversation/index.yml
+/api/v1/accounts/{account_id}/conversations/pins:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/conversation/pins.yml
 /api/v1/accounts/{account_id}/conversations/filter:
   parameters:
     - $ref: '#/components/parameters/account_id'
@@ -355,6 +387,18 @@
     $ref: ./application/conversation/show.yml
   patch:
     $ref: ./application/conversation/update.yml
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/pin:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  post:
+    $ref: ./application/conversation/pin.yml
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/unpin:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  delete:
+    $ref: ./application/conversation/unpin.yml
 /api/v1/accounts/{account_id}/conversations/{conversation_id}/toggle_status:
   parameters:
     - $ref: '#/components/parameters/account_id'
@@ -373,6 +417,13 @@
     - $ref: '#/components/parameters/conversation_id'
   post:
     $ref: ./application/conversation/toggle_typing_status.yml
+
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/read_receipt:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  post:
+    $ref: ./application/conversation/read_receipt.yml
 
 /api/v1/accounts/{account_id}/conversations/{conversation_id}/custom_attributes:
   parameters:
@@ -416,6 +467,27 @@
     - $ref: '#/components/parameters/conversation_id'
   get:
     $ref: ./application/conversation/reporting_events.yml
+
+# Scheduled Messages
+
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/scheduled_messages:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+  get:
+    $ref: ./application/conversation/scheduled_messages/index.yml
+  post:
+    $ref: ./application/conversation/scheduled_messages/create.yml
+
+/api/v1/accounts/{account_id}/conversations/{conversation_id}/scheduled_messages/{scheduled_message_id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/conversation_id'
+    - $ref: '#/components/parameters/scheduled_message_id'
+  patch:
+    $ref: ./application/conversation/scheduled_messages/update.yml
+  delete:
+    $ref: ./application/conversation/scheduled_messages/delete.yml
 
 # Inboxes
 /api/v1/accounts/{account_id}/branded_email_layout:
@@ -825,6 +897,207 @@
       description: The timestamp from where report should stop (Unix timestamp).
   get:
     $ref: './application/reports/outgoing_messages_count.yml'
+
+# ------------ Internal Chat routes ------------ #
+
+# Internal Chat Categories
+/api/v1/accounts/{account_id}/internal_chat/categories:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/internal_chat/categories/index.yml
+  post:
+    $ref: ./application/internal_chat/categories/create.yml
+/api/v1/accounts/{account_id}/internal_chat/categories/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_category_id'
+  patch:
+    $ref: ./application/internal_chat/categories/update.yml
+  delete:
+    $ref: ./application/internal_chat/categories/delete.yml
+
+# Internal Chat Channels
+/api/v1/accounts/{account_id}/internal_chat/channels:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/internal_chat/channels/index.yml
+  post:
+    $ref: ./application/internal_chat/channels/create.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  get:
+    $ref: ./application/internal_chat/channels/show.yml
+  patch:
+    $ref: ./application/internal_chat/channels/update.yml
+  delete:
+    $ref: ./application/internal_chat/channels/delete.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}/archive:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  post:
+    $ref: ./application/internal_chat/channels/archive.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}/unarchive:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  post:
+    $ref: ./application/internal_chat/channels/unarchive.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}/toggle_typing_status:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  post:
+    $ref: ./application/internal_chat/channels/toggle_typing_status.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}/mark_read:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  post:
+    $ref: ./application/internal_chat/channels/mark_read.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{id}/mark_unread:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id'
+  post:
+    $ref: ./application/internal_chat/channels/mark_unread.yml
+
+# Internal Chat Channel Members
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/members:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+  get:
+    $ref: ./application/internal_chat/channel_members/index.yml
+  post:
+    $ref: ./application/internal_chat/channel_members/create.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/members/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+    - $ref: '#/components/parameters/internal_chat_member_id'
+  patch:
+    $ref: ./application/internal_chat/channel_members/update.yml
+  delete:
+    $ref: ./application/internal_chat/channel_members/delete.yml
+
+# Internal Chat Messages
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/messages:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+  get:
+    $ref: ./application/internal_chat/messages/index.yml
+  post:
+    $ref: ./application/internal_chat/messages/create.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/messages/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: The ID of the message
+  patch:
+    $ref: ./application/internal_chat/messages/update.yml
+  delete:
+    $ref: ./application/internal_chat/messages/delete.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/messages/{id}/pin:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: The ID of the message
+  post:
+    $ref: ./application/internal_chat/messages/pin.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/messages/{id}/unpin:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: The ID of the message
+  delete:
+    $ref: ./application/internal_chat/messages/unpin.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/messages/{id}/thread:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+    - name: id
+      in: path
+      schema:
+        type: integer
+      required: true
+      description: The ID of the message
+  get:
+    $ref: ./application/internal_chat/messages/thread.yml
+
+# Internal Chat Reactions
+/api/v1/accounts/{account_id}/internal_chat/messages/{message_id}/reactions:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_message_id'
+  post:
+    $ref: ./application/internal_chat/reactions/create.yml
+/api/v1/accounts/{account_id}/internal_chat/messages/{message_id}/reactions/{id}:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_message_id'
+    - $ref: '#/components/parameters/internal_chat_reaction_id'
+  delete:
+    $ref: ./application/internal_chat/reactions/delete.yml
+
+# Internal Chat Polls
+/api/v1/accounts/{account_id}/internal_chat/polls:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  post:
+    $ref: ./application/internal_chat/polls/create.yml
+/api/v1/accounts/{account_id}/internal_chat/polls/{id}/vote:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_poll_id'
+  post:
+    $ref: ./application/internal_chat/polls/vote.yml
+  delete:
+    $ref: ./application/internal_chat/polls/unvote.yml
+
+# Internal Chat Drafts
+/api/v1/accounts/{account_id}/internal_chat/drafts:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/internal_chat/drafts/index.yml
+/api/v1/accounts/{account_id}/internal_chat/channels/{channel_id}/draft:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - $ref: '#/components/parameters/internal_chat_channel_id_path'
+  patch:
+    $ref: ./application/internal_chat/drafts/update.yml
+  delete:
+    $ref: ./application/internal_chat/drafts/delete.yml
+
+# Internal Chat Search
+/api/v1/accounts/{account_id}/internal_chat/search:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+  get:
+    $ref: ./application/internal_chat/search/show.yml
+
+# ------------ end of Internal Chat routes ------------ #
 
 # Conversations Messages
 /accounts/{account_id}/conversations/{conversation_id}/messages:

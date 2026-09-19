@@ -3,6 +3,7 @@ import {
   DEFAULT_CONVERSATION_CONDITION,
   DEFAULT_MESSAGE_CREATED_CONDITION,
   DEFAULT_OTHER_CONDITION,
+  MESSAGE_LEVEL_EVENTS,
 } from 'dashboard/constants/automation';
 import {
   OPERATOR_TYPES_1,
@@ -182,6 +183,7 @@ export const getConditionOptions = ({
   type,
   priorityOptions,
   messageTypeOptions,
+  senderTypeOptions,
 }) => {
   if (isCustomAttributeCheckbox(customAttributes, type)) {
     return booleanFilterOptions;
@@ -203,7 +205,13 @@ export const getConditionOptions = ({
     country_code: countries,
     message_type: messageTypeOptions,
     private_note: booleanFilterOptions,
+    sender_id: agents,
+    sender_type: senderTypeOptions,
     priority: priorityOptions,
+    group_type: [
+      { id: 'individual', name: 'Individual' },
+      { id: 'group', name: 'Group' },
+    ],
     labels: generateLabelOptions(labels),
   };
 
@@ -211,17 +219,28 @@ export const getConditionOptions = ({
 };
 
 export const getFileName = (action, files = []) => {
-  const blobId = action.action_params[0];
+  const scheduledParams = Array.isArray(action.action_params)
+    ? action.action_params[0]
+    : action.action_params;
+  const blobId =
+    action.action_name === 'create_scheduled_message'
+      ? scheduledParams?.blob_id
+      : action.action_params?.[0];
   if (!blobId) return '';
-  if (action.action_name === 'send_attachment') {
-    const file = files.find(item => item.blob_id === blobId);
+  if (
+    action.action_name === 'send_attachment' ||
+    action.action_name === 'create_scheduled_message'
+  ) {
+    const file = files.find(
+      item => item.blob_id?.toString() === blobId.toString()
+    );
     if (file) return file.filename.toString();
   }
   return '';
 };
 
 export const getDefaultConditions = eventName => {
-  if (eventName === 'message_created') {
+  if (MESSAGE_LEVEL_EVENTS.includes(eventName)) {
     return structuredClone(DEFAULT_MESSAGE_CREATED_CONDITION);
   }
   if (
@@ -344,7 +363,7 @@ export const getInputType = (
     return getCustomAttributeInputType(customAttribute.attribute_display_type);
   }
   const type = getAutomationType(automationTypes, automation, key);
-  return type.inputType;
+  return type?.inputType ?? '';
 };
 
 /**
@@ -370,7 +389,7 @@ export const getOperators = (
     }
   }
   const type = getAutomationType(automationTypes, automation, key);
-  return type.filterOperators;
+  return type?.filterOperators ?? [];
 };
 
 /**
@@ -381,9 +400,10 @@ export const getOperators = (
  * @returns {string} The custom attribute type.
  */
 export const getCustomAttributeType = (automationTypes, automation, key) => {
-  return automationTypes[automation.event_name].conditions.find(
-    i => i.key === key
-  ).customAttributeType;
+  return (
+    automationTypes[automation.event_name].conditions.find(i => i.key === key)
+      ?.customAttributeType ?? ''
+  );
 };
 
 /**
@@ -393,8 +413,12 @@ export const getCustomAttributeType = (automationTypes, automation, key) => {
  * @returns {boolean} True if the action input should be shown, false otherwise.
  */
 export const showActionInput = (automationActionTypes, action) => {
-  if (action === 'send_email_to_team' || action === 'send_message')
+  if (
+    action === 'send_email_to_team' ||
+    action === 'send_message' ||
+    action === 'create_scheduled_message'
+  )
     return false;
-  const type = automationActionTypes.find(i => i.key === action).inputType;
+  const type = automationActionTypes.find(i => i.key === action)?.inputType;
   return !!type;
 };

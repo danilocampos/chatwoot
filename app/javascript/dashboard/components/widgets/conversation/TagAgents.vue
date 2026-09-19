@@ -16,6 +16,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  excludeUserId: {
+    type: Number,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['selectAgent', 'close', 'removeTrigger']);
@@ -35,6 +39,7 @@ const matchesSearch = name => name?.toLowerCase().includes(searchTerm.value);
 
 const agentItems = computed(() =>
   agents.value
+    .filter(agent => !props.excludeUserId || agent.id !== props.excludeUserId)
     .filter(agent => matchesSearch(agent.name))
     .map(agent => ({
       id: `user-${agent.id}`,

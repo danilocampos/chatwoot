@@ -102,6 +102,10 @@ app.use(FloatingVue, {
     tooltip: {
       strategy: 'fixed',
     },
+    'naked-popover': {
+      $extend: 'dropdown',
+      $resetCss: true,
+    },
   },
 });
 app.use(hljsVuePlugin);

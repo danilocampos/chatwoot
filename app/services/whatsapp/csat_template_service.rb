@@ -1,4 +1,6 @@
 class Whatsapp::CsatTemplateService
+  include Whatsapp::GraphRequestOptions
+
   DEFAULT_BUTTON_TEXT = 'Please rate us'.freeze
   DEFAULT_LANGUAGE = 'en'.freeze
   WHATSAPP_API_VERSION = 'v14.0'.freeze
@@ -22,13 +24,14 @@ class Whatsapp::CsatTemplateService
     template_name ||= CsatTemplateNameService.csat_template_name(@whatsapp_channel.inbox.id)
     response = HTTParty.delete(
       "#{business_account_path}/message_templates?name=#{template_name}",
-      headers: api_headers
+      headers: api_headers,
+      **GRAPH_REQUEST_OPTIONS
     )
     { success: response.success?, response_body: response.body }
   end
 
   def get_template_status(template_name)
-    response = HTTParty.get("#{business_account_path}/message_templates?name=#{template_name}", headers: api_headers)
+    response = HTTParty.get("#{business_account_path}/message_templates?name=#{template_name}", headers: api_headers, **GRAPH_REQUEST_OPTIONS)
 
     if response.success? && response['data']&.any?
       template_data = response['data'].first
@@ -47,7 +50,49 @@ class Whatsapp::CsatTemplateService
     { success: false, error: e.message }
   end
 
+  def valid_csat_template?(template)
+    url_button = extract_url_button(template)
+    url_button&.dig('url')&.include?('{{1}}') || false
+  end
+
+  def available_csat_templates
+    templates = @whatsapp_channel.message_templates
+    return [] if templates.blank?
+
+    approved_csat_templates = templates.select { |t| t['status']&.downcase == 'approved' && valid_csat_template?(t) }
+    approved_csat_templates.map { |template| build_available_template_entry(template) }
+  end
+
+  def extract_body_variables(body_text)
+    return [] if body_text.blank?
+
+    body_text.scan(/\{\{(\d+)\}\}/).flatten.uniq.sort_by(&:to_i)
+  end
+
   private
+
+  def extract_url_button(template)
+    buttons_component = template['components']&.find { |c| c['type'] == 'BUTTONS' }
+    return nil unless buttons_component
+
+    buttons_component['buttons']&.find { |b| b['type'] == 'URL' }
+  end
+
+  def build_available_template_entry(template)
+    body = template['components']&.find { |c| c['type'] == 'BODY' }
+    url_button = extract_url_button(template)
+    body_text = body&.dig('text')
+
+    {
+      name: template['name'],
+      language: template['language'],
+      status: template['status'],
+      body_text: body_text,
+      button_text: url_button&.dig('text'),
+      button_url: url_button&.dig('url'),
+      body_variables: extract_body_variables(body_text)
+    }
+  end
 
   def generate_template_name(base_name)
     current_template_name = current_template_name_from_config
@@ -99,7 +144,8 @@ class Whatsapp::CsatTemplateService
     HTTParty.post(
       "#{business_account_path}/message_templates",
       headers: api_headers,
-      body: request_body.to_json
+      body: request_body.to_json,
+      **GRAPH_REQUEST_OPTIONS
     )
   end
 

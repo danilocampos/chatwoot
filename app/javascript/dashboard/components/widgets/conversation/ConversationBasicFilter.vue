@@ -9,11 +9,14 @@ import wootConstants from 'dashboard/constants/globals';
 import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
-defineProps({
+const props = defineProps({
   isOnExpandedLayout: {
     type: Boolean,
     required: true,
   },
+  // Inside a folder or an applied filter, status and group type are already decided by
+  // the query itself, so offering them here would let the agent contradict the folder
+  // they are standing in. Order is the one choice that stays theirs.
   showStatusFilter: {
     type: Boolean,
     default: true,
@@ -29,8 +32,16 @@ const { updateUISettings } = useUISettings();
 
 const chatStatusFilter = useMapGetter('getChatStatusFilter');
 const chatSortFilter = useMapGetter('getChatSortFilter');
+const chatGroupTypeFilter = useMapGetter('getChatGroupTypeFilter');
 
 const [showActionsDropdown, toggleDropdown] = useToggle();
+
+// Wider, not narrower. Narrowing it for the single-row case was the wrong instinct: with
+// only the sort row left, the label sits next to the longest value in the whole menu
+// ("Atividade mais recente primeiro"), and at w-72 the label truncated to "Orden...".
+const dropdownWidth = computed(() =>
+  props.showStatusFilter ? 'w-72' : 'w-[22rem]'
+);
 
 const currentStatusFilter = computed(() => {
   return chatStatusFilter.value || wootConstants.STATUS_TYPE.OPEN;
@@ -41,6 +52,8 @@ const currentSortBy = computed(() => {
     chatSortFilter.value || wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC
   );
 });
+
+const currentGroupType = computed(() => chatGroupTypeFilter.value || '');
 
 const chatStatusOptions = computed(() => [
   {
@@ -108,6 +121,12 @@ const chatSortOptions = computed(() => [
   },
 ]);
 
+const chatGroupTypeOptions = computed(() => [
+  { label: t('GROUP.FILTER.ALL'), value: '' },
+  { label: t('GROUP.FILTER.INDIVIDUAL'), value: 'individual' },
+  { label: t('GROUP.FILTER.GROUP'), value: 'group' },
+]);
+
 const activeChatStatusLabel = computed(
   () =>
     chatStatusOptions.value.find(m => m.value === chatStatusFilter.value)
@@ -120,11 +139,18 @@ const activeChatSortLabel = computed(
     ''
 );
 
+const activeGroupTypeLabel = computed(
+  () =>
+    chatGroupTypeOptions.value.find(m => m.value === chatGroupTypeFilter.value)
+      ?.label || t('GROUP.FILTER.ALL')
+);
+
 const saveSelectedFilter = (type, value) => {
   updateUISettings({
     conversations_filter_by: {
       status: type === 'status' ? value : currentStatusFilter.value,
       order_by: type === 'sort' ? value : currentSortBy.value,
+      group_type: type === 'group_type' ? value : currentGroupType.value,
     },
   });
 };
@@ -139,6 +165,12 @@ const handleSortChange = value => {
   emit('changeFilter', value, 'sort');
   store.dispatch('setChatSortFilter', value);
   saveSelectedFilter('sort', value);
+};
+
+const handleGroupTypeChange = value => {
+  emit('changeFilter', value, 'group_type');
+  store.dispatch('setChatGroupTypeFilter', value);
+  saveSelectedFilter('group_type', value);
 };
 </script>
 
@@ -155,8 +187,9 @@ const handleSortChange = value => {
     <div
       v-if="showActionsDropdown"
       v-on-click-outside="() => toggleDropdown()"
-      class="mt-1 bg-n-alpha-3 backdrop-blur-[100px] border border-n-weak w-72 rounded-xl p-4 absolute z-40 top-full"
+      class="mt-1 bg-n-alpha-3 backdrop-blur-[100px] border border-n-weak rounded-xl p-4 absolute z-40 top-full flex flex-col gap-4"
       :class="{
+        [dropdownWidth]: true,
         'ltr:left-0 rtl:right-0': !isOnExpandedLayout,
         'ltr:right-0 rtl:left-0': isOnExpandedLayout,
       }"
@@ -176,11 +209,11 @@ const handleSortChange = value => {
           @update:model-value="handleStatusChange"
         />
       </div>
-      <div
-        class="flex items-center justify-between gap-2"
-        :class="{ 'mt-4': showStatusFilter }"
-      >
-        <span class="text-sm truncate text-n-slate-12">
+      <div class="flex items-center justify-between gap-2">
+        <span
+          class="text-sm truncate text-n-slate-12"
+          :class="{ 'shrink-0': !showStatusFilter }"
+        >
           {{ $t('CHAT_LIST.CHAT_SORT.ORDER_BY') }}
         </span>
         <SelectMenu
@@ -189,6 +222,21 @@ const handleSortChange = value => {
           :label="activeChatSortLabel"
           :sub-menu-position="isOnExpandedLayout ? 'left' : 'right'"
           @update:model-value="handleSortChange"
+        />
+      </div>
+      <div
+        v-if="showStatusFilter"
+        class="flex items-center justify-between gap-2"
+      >
+        <span class="text-sm truncate text-n-slate-12">
+          {{ $t('GROUP.FILTER.TYPE_LABEL') }}
+        </span>
+        <SelectMenu
+          :model-value="chatGroupTypeFilter"
+          :options="chatGroupTypeOptions"
+          :label="activeGroupTypeLabel"
+          :sub-menu-position="isOnExpandedLayout ? 'left' : 'right'"
+          @update:model-value="handleGroupTypeChange"
         />
       </div>
     </div>

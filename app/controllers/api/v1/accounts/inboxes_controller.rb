@@ -1,9 +1,12 @@
-class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
+class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController # rubocop:disable Metrics/ClassLength
   include Api::V1::InboxesHelper
   before_action :fetch_inbox, except: [:index, :create]
   before_action :fetch_agent_bot, only: [:set_agent_bot]
   # we are already handling the authorization in fetch inbox
-  before_action :check_authorization, except: [:show]
+  # rubocop:disable Rails/LexicallyScopedActionFilter -- health is defined in InboxHealthManagement concern
+  before_action :check_authorization,
+                except: [:show, :health, :setup_channel_provider, :import_whatsapp_session, :request_pairing_code]
+  # rubocop:enable Rails/LexicallyScopedActionFilter
 
   include Api::V1::Accounts::Concerns::InboxHealthManagement
   include Api::V1::Accounts::Concerns::InboxSecretManagement
@@ -77,16 +80,165 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     head :ok
   end
 
+  def setup_channel_provider
+    channel = @inbox.channel
+
+    unless channel.respond_to?(:setup_channel_provider)
+      render json: { error: 'Channel does not support setup' }, status: :unprocessable_entity and return
+    end
+
+    channel.setup_channel_provider
+    head :ok
+  rescue Whatsapp::Session::Errors::Error => e
+    render_session_error(e)
+  end
+
+  # The other way into the same pairing, for an operator who cannot scan the QR.
+  # Authorized exactly like setup_channel_provider, and for the same reason: both link a
+  # WhatsApp account to an inbox this agent is already assigned to.
+  #
+  # No phone in the request. The number is the inbox's own, because pairing links
+  # whatever phone the code is typed on and the layer quarantines a session whose account
+  # is not the inbox's.
+  def request_pairing_code
+    channel = @inbox.channel
+
+    unless channel.respond_to?(:request_pairing_code)
+      render json: { error: 'Channel does not support pairing by code' }, status: :unprocessable_entity and return
+    end
+
+    channel.request_pairing_code
+    head :ok
+  rescue Whatsapp::Session::Errors::Error => e
+    render_session_error(e)
+  end
+
+  # Hot-loads a WhatsApp Web session extracted by the browser extension into a
+  # disconnected Baileys inbox. Authorized like setup_channel_provider (any agent
+  # assigned to the inbox, via fetch_inbox -> show?), since connecting a number
+  # to an assigned inbox is the same privilege as scanning a QR for it.
+  def import_whatsapp_session
+    channel = @inbox.channel
+
+    unless channel.is_a?(Channel::Whatsapp) && channel.provider == 'baileys'
+      render json: { error: 'Session import is only supported for Baileys WhatsApp channels' },
+             status: :unprocessable_entity and return
+    end
+
+    session = import_session_params[:session].to_h
+    render json: { error: 'Session payload is required' }, status: :unprocessable_entity and return if session.blank?
+
+    channel.import_session(
+      session: session,
+      candidate_index: import_session_params[:candidate_index].to_i
+    )
+    head :ok
+  rescue Whatsapp::Session::Errors::ProviderUnavailable
+    render json: { error: 'WhatsApp provider is currently unavailable. Please try again.' }, status: :service_unavailable
+  end
+
+  def disconnect_channel_provider
+    channel = @inbox.channel
+
+    unless channel.respond_to?(:disconnect_channel_provider)
+      render json: { error: 'Channel does not support disconnect' }, status: :unprocessable_entity and return
+    end
+
+    channel.disconnect_channel_provider
+    channel.update_provider_connection!(connection: 'close') if channel.respond_to?(:update_provider_connection!)
+    head :ok
+  rescue Whatsapp::Session::Errors::Error => e
+    # Marked closed on success only. A session the provider refused to end is still open,
+    # and recording it as closed is how an operator ends up with a connected number, a
+    # dashboard that says otherwise, and no reason to try again.
+    render_session_error(e)
+  end
+
+  def convert_provider
+    channel = @inbox.channel
+
+    unless channel.respond_to?(:convert_provider!)
+      render json: { error: 'Channel does not support provider conversion' }, status: :unprocessable_entity and return
+    end
+
+    new_provider = params.require(:provider)
+    new_provider_config = (params.permit(provider_config: {})[:provider_config] || {}).to_h
+
+    channel.convert_provider!(new_provider: new_provider, new_provider_config: new_provider_config)
+    render :show
+  rescue ActionController::ParameterMissing => e
+    render json: { message: e.message }, status: :bad_request
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { message: e.record.errors.full_messages.join(', ') }, status: :unprocessable_entity
+  rescue StandardError => e
+    Rails.logger.error "[WHATSAPP] Provider conversion failed for inbox #{@inbox.id}: #{e.class}: #{e.message}"
+    render json: { message: 'Provider conversion failed. Please check your credentials and the previous provider session, then try again.' },
+           status: :unprocessable_entity
+  end
+
   def destroy
     ::DeleteObjectJob.perform_later(@inbox, Current.user, request.ip) if @inbox.present?
     render status: :ok, json: { message: I18n.t('messages.inbox_deletetion_response') }
   end
 
+  def on_whatsapp
+    params.require(:phone_number)
+    phone_number = params[:phone_number]
+    channel = @inbox.channel
+
+    unless channel.respond_to?(:on_whatsapp)
+      render json: { error: 'Channel does not support whatsapp check' }, status: :unprocessable_entity and return
+    end
+
+    response = channel.on_whatsapp(phone_number)
+
+    render json: response, status: :ok
+  end
+
   private
+
+  # The session layer's errors are answers, not crashes: a token typed wrong, an instance
+  # that is down, a provider that is rate limiting, a connect refused rather than
+  # attempted because the number is quarantined on a provider that cannot unpair. Both
+  # actions above are called straight from the pairing UI, which shows what comes back, so
+  # a 500 is a blank wall where a sentence belongs.
+  #
+  # Unauthorized and InvalidConfig are the operator's to fix and say so with a 422, even
+  # though they sit under ProviderUnavailable; retrying them changes nothing.
+  def render_session_error(error)
+    operator_fixable = error.is_a?(Whatsapp::Session::Errors::Unauthorized) ||
+                       error.is_a?(Whatsapp::Session::Errors::InvalidConfig)
+    status = if error.is_a?(Whatsapp::Session::Errors::RateLimited)
+               :too_many_requests
+             elsif error.is_a?(Whatsapp::Session::Errors::ProviderUnavailable) && !operator_fixable
+               :service_unavailable
+             else
+               :unprocessable_entity
+             end
+
+    render json: { error: error.message, code: error.class::CODE }, status: status
+  end
 
   def fetch_inbox
     @inbox = Current.account.inboxes.find(params[:id])
     authorize @inbox, :show?
+  end
+
+  # The session is opaque credentials forwarded verbatim to the Baileys API,
+  # which validates its schema. We still permit an explicit shape (rather than
+  # permit!) so nothing unexpected is forwarded. camelCase keys match the
+  # extractor's output.
+  def import_session_params
+    params.permit(
+      :candidate_index,
+      session: [
+        :registrationId, :advSecretKey, :id, :lid, :platform, :pushName, :routingInfo,
+        { noiseCandidates: %i[private public] },
+        { identityKey: %i[private public] },
+        { account: %i[details accountSignatureKey accountSignature deviceSignature] },
+        { signedPreKey: %i[keyId private public signature] }
+      ]
+    )
   end
 
   def fetch_agent_bot
@@ -190,10 +342,11 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def inbox_attributes
     [:name, :avatar, :greeting_enabled, :greeting_message, :enable_email_collect, :csat_survey_enabled,
      :enable_auto_assignment, :working_hours_enabled, :out_of_office_message, :timezone, :allow_messages_after_resolved,
-     :lock_to_single_conversation, :portal_id, :sender_name_type, :business_name,
+     :lock_to_single_conversation, :prevent_assignment_takeover, :portal_id, :sender_name_type, :business_name,
      { csat_config: [:display_type, :message, :button_text, :language,
                      { survey_rules: [:operator, { values: [] }],
-                       template: [:name, :template_id, :friendly_name, :content_sid, :approval_sid, :created_at, :language, :status] }] }]
+                       template: [:name, :template_id, :friendly_name, :content_sid, :approval_sid,
+                                  :created_at, :linked_at, :language, :source, :status, { body_variables: {} }] }] }]
   end
 
   def permitted_params(channel_attributes = [])

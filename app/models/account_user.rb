@@ -36,7 +36,7 @@ class AccountUser < ApplicationRecord
 
   accepts_nested_attributes_for :account
 
-  after_create_commit :notify_creation, :create_notification_setting
+  after_create_commit :notify_creation, :create_notification_setting, :add_to_public_internal_chat_channels
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
   after_commit :invalidate_filtered_unread_count_visibility, on: [:create, :destroy]
@@ -46,7 +46,7 @@ class AccountUser < ApplicationRecord
 
   def create_notification_setting
     setting = user.notification_settings.new(account_id: account.id)
-    setting.selected_email_flags = [:email_conversation_assignment]
+    setting.selected_email_flags = []
     setting.selected_push_flags = [:push_conversation_assignment]
     setting.save!
   end
@@ -80,6 +80,14 @@ class AccountUser < ApplicationRecord
 
   def update_presence_in_redis
     OnlineStatusTracker.set_status(account.id, user.id, availability)
+  end
+
+  def add_to_public_internal_chat_channels
+    account.internal_chat_channels.where(channel_type: :public_channel).find_each do |channel|
+      channel.channel_members.find_or_create_by!(user_id: user_id) do |m|
+        m.role = administrator? ? :admin : :member
+      end
+    end
   end
 
   def filtered_unread_count_visibility_changed?

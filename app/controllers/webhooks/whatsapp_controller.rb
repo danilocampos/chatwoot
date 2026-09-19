@@ -12,11 +12,26 @@ class Webhooks::WhatsappController < ActionController::API
 
     return head :ok if tracking_events_only?
 
+    perform_whatsapp_events_job
+  end
+
+  private
+
+  def perform_whatsapp_events_job
+    perform_sync if params[:awaitResponse].present?
+    return if performed?
+
     Webhooks::WhatsappEventsJob.perform_later(params.to_unsafe_hash)
     head :ok
   end
 
-  private
+  def perform_sync
+    Webhooks::WhatsappEventsJob.perform_now(params.to_unsafe_hash)
+  rescue Whatsapp::IncomingMessageBaileysService::InvalidWebhookVerifyToken
+    head :unauthorized
+  rescue Whatsapp::IncomingMessageBaileysService::MessageNotFoundError
+    head :not_found
+  end
 
   def tracking_events_only?
     return false unless params[:object] == 'whatsapp_business_account'

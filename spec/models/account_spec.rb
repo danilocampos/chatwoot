@@ -184,21 +184,21 @@ RSpec.describe Account do
     let(:account) { create(:account) }
 
     it 'returns the domain from inbox if inbox value is present' do
-      account.update(domain: 'test.com')
+      account.update!(domain: 'test.com')
       with_modified_env MAILER_INBOUND_EMAIL_DOMAIN: 'test2.com' do
         expect(account.inbound_email_domain).to eq('test.com')
       end
     end
 
     it 'returns the domain from ENV if inbox value is nil' do
-      account.update(domain: nil)
+      account.update!(domain: nil)
       with_modified_env MAILER_INBOUND_EMAIL_DOMAIN: 'test.com' do
         expect(account.inbound_email_domain).to eq('test.com')
       end
     end
 
     it 'returns the domain from ENV if inbox value is empty string' do
-      account.update(domain: '')
+      account.update!(domain: '')
       with_modified_env MAILER_INBOUND_EMAIL_DOMAIN: 'test.com' do
         expect(account.inbound_email_domain).to eq('test.com')
       end
@@ -209,21 +209,21 @@ RSpec.describe Account do
     let(:account) { create(:account) }
 
     it 'returns the support email from inbox if inbox value is present' do
-      account.update(support_email: 'support@chatwoot.com')
+      account.update!(support_email: 'support@chatwoot.com')
       with_modified_env MAILER_SENDER_EMAIL: 'hello@chatwoot.com' do
         expect(account.support_email).to eq('support@chatwoot.com')
       end
     end
 
     it 'returns the support email from ENV if inbox value is nil' do
-      account.update(support_email: nil)
+      account.update!(support_email: nil)
       with_modified_env MAILER_SENDER_EMAIL: 'hello@chatwoot.com' do
         expect(account.support_email).to eq('hello@chatwoot.com')
       end
     end
 
     it 'returns the support email from ENV if inbox value is empty string' do
-      account.update(support_email: '')
+      account.update!(support_email: '')
       with_modified_env MAILER_SENDER_EMAIL: 'hello@chatwoot.com' do
         expect(account.support_email).to eq('hello@chatwoot.com')
       end
@@ -236,7 +236,7 @@ RSpec.describe Account do
       query = "select * from information_schema.sequences where sequence_name in  ('camp_dpid_seq_#{account.id}', 'conv_dpid_seq_#{account.id}');"
       expect(ActiveRecord::Base.connection.execute(query).count).to eq(2)
       expect(account.locale).to eq('en')
-      account.destroy
+      account.destroy!
       expect(ActiveRecord::Base.connection.execute(query).count).to eq(0)
     end
   end
@@ -374,14 +374,82 @@ RSpec.describe Account do
       end
     end
 
+    context 'when toggling agent assignee tab visibility' do
+      it 'casts truthy form input to boolean true' do
+        account.hide_agent_unassigned_tab = '1'
+        account.hide_agent_all_tab = 'true'
+
+        expect(account.hide_agent_unassigned_tab).to be true
+        expect(account.hide_agent_all_tab).to be true
+        expect(account.settings['hide_agent_unassigned_tab']).to be true
+        expect(account.settings['hide_agent_all_tab']).to be true
+      end
+
+      it 'casts falsy form input to boolean false' do
+        account.hide_agent_unassigned_tab = '0'
+        account.hide_agent_all_tab = 'false'
+
+        expect(account.hide_agent_unassigned_tab).to be false
+        expect(account.hide_agent_all_tab).to be false
+      end
+
+      it 'persists across save with the schema validator passing' do
+        account.update!(hide_agent_unassigned_tab: '0', hide_agent_all_tab: '1')
+        reloaded = described_class.find(account.id)
+
+        expect(reloaded.hide_agent_unassigned_tab).to be false
+        expect(reloaded.hide_agent_all_tab).to be true
+      end
+
+      it 'rejects non-boolean values via the JSON schema validator' do
+        account.settings = { hide_agent_unassigned_tab: 'maybe' }
+        expect(account).to be_invalid
+        expect(account.errors.messages).to have_key(:hide_agent_unassigned_tab)
+      end
+
+      it 'forces hide_agent_all_tab to true when hide_agent_unassigned_tab is enabled' do
+        account.update!(hide_agent_unassigned_tab: true, hide_agent_all_tab: false)
+        expect(account.reload.hide_agent_all_tab).to be true
+      end
+
+      it 'leaves hide_agent_all_tab untouched when hide_agent_unassigned_tab is false' do
+        account.update!(hide_agent_unassigned_tab: false, hide_agent_all_tab: false)
+        expect(account.reload.hide_agent_all_tab).to be false
+      end
+    end
+
+    context 'when toggling agent message deletion' do
+      it 'casts form input to boolean' do
+        account.disable_agent_message_deletion = '1'
+        expect(account.disable_agent_message_deletion).to be true
+
+        account.disable_agent_message_deletion = '0'
+        expect(account.disable_agent_message_deletion).to be false
+      end
+
+      it 'persists across save with the schema validator passing' do
+        account.update!(disable_agent_message_deletion: 'true')
+        reloaded = described_class.find(account.id)
+
+        expect(reloaded.disable_agent_message_deletion).to be true
+        expect(reloaded.settings['disable_agent_message_deletion']).to be true
+      end
+
+      it 'rejects non-boolean values via the JSON schema validator' do
+        account.settings = { disable_agent_message_deletion: 'maybe' }
+        expect(account).to be_invalid
+        expect(account.errors.messages).to have_key(:disable_agent_message_deletion)
+      end
+    end
+
     context 'when using with_auto_resolve scope' do
       it 'finds accounts with auto_resolve_after set' do
-        account.update(auto_resolve_after: 40 * 24 * 60)
+        account.update!(auto_resolve_after: 40 * 24 * 60)
         expect(described_class.with_auto_resolve.pluck(:id)).to include(account.id)
       end
 
       it 'does not find accounts without auto_resolve_after' do
-        account.update(auto_resolve_after: nil)
+        account.update!(auto_resolve_after: nil)
         expect(described_class.with_auto_resolve.pluck(:id)).not_to include(account.id)
       end
     end
@@ -422,6 +490,95 @@ RSpec.describe Account do
         expect(account).not_to be_valid
         expect(account.errors[:reporting_timezone]).to include(I18n.t('errors.account.reporting_timezone.invalid'))
       end
+    end
+  end
+
+  describe 'brand_url' do
+    let(:account) { create(:account) }
+
+    # The value lands in the href of the email footer, where a relative one resolves against
+    # the mail client and goes nowhere.
+    it 'rejects a URL without a scheme' do
+      account.brand_url = 'example.com'
+
+      expect(account).not_to be_valid
+      expect(account.errors[:brand_url]).to include('must start with http:// or https://')
+    end
+
+    it 'rejects a scheme that is not http' do
+      account.brand_url = 'javascript:alert(1)'
+
+      expect(account).not_to be_valid
+    end
+
+    it 'accepts an absolute http(s) URL' do
+      account.brand_url = 'https://www.guicheweb.com.br'
+
+      expect(account).to be_valid
+    end
+
+    it 'accepts an empty value, which falls back to the installation' do
+      account.brand_url = ''
+
+      expect(account).to be_valid
+    end
+  end
+
+  describe 'brand_name' do
+    let(:account) { create(:account) }
+
+    # A branded layout a customer already stored in email_templates renders the value raw, and
+    # this is the first time an account administrator rather than a super admin writes it.
+    it 'rejects markup' do
+      account.brand_name = '<img src=x onerror=alert(1)>'
+
+      expect(account).not_to be_valid
+      expect(account.errors[:brand_name]).to include('cannot contain < or >')
+    end
+
+    # settings is jsonb and strong parameters keep a JSON scalar's type, so a non-string value
+    # reaches the validator as one. It has to come back 422, not 500.
+    it 'reports a non-string value instead of raising' do
+      account.brand_name = 123
+
+      expect { account.valid? }.not_to raise_error
+      expect(account).not_to be_valid
+    end
+
+    it 'accepts a name with characters the layout escapes' do
+      account.brand_name = 'Ben & Jerry\'s "best"'
+
+      expect(account).to be_valid
+    end
+  end
+
+  describe 'brand_logo_email' do
+    let(:account) { create(:account) }
+
+    def attach(io, filename, content_type)
+      account.brand_logo_email.attach(io: io, filename: filename, content_type: content_type)
+    end
+
+    it 'accepts a raster image' do
+      attach(Rails.root.join('spec/assets/avatar.png').open, 'avatar.png', 'image/png')
+
+      expect(account).to be_valid
+    end
+
+    # No mail client renders SVG, so accepting one would put a broken image at the top of every
+    # email the account sends.
+    it 'rejects a format email cannot render' do
+      attach(Rails.root.join('spec/assets/sample.pdf').open, 'sample.pdf', 'application/pdf')
+
+      expect(account).not_to be_valid
+      expect(account.errors[:brand_logo_email]).to include('must be a PNG, JPG or GIF')
+    end
+
+    it 'rejects an image heavier than the cap' do
+      attach(StringIO.new('0' * (Account::BRAND_LOGO_EMAIL_MAX_SIZE + 1)), 'grande.png', 'image/png')
+
+      expect(account).not_to be_valid
+      expect(account.errors[:brand_logo_email]).to include('is larger than 2 MB')
     end
   end
 

@@ -1,5 +1,14 @@
-module Api::V1::Accounts::Concerns::InboxHealthManagement
+module Api::V1::Accounts::Concerns::InboxHealthManagement # rubocop:disable Metrics/ModuleLength
   extend ActiveSupport::Concern
+
+  # The whole of `register_webhook`, across its four Graph calls (fazer-ai/chatwoot#592). Under 15s because
+  # that is where `rack-timeout` cuts a request in production unless an installation sets
+  # RACK_TIMEOUT_SERVICE_TIMEOUT, and it cuts with a Thread#raise the rescue below never sees: the operator
+  # gets a 500 from wherever the thread happened to be, possibly after Meta stored the subscription.
+  # Answering first, with what landed, is the point. At least a full ceiling plus one more call, because the
+  # subscription is the half that decides whether anything arrives, and a slow but healthy Meta must still
+  # get its whole ceiling for it.
+  REGISTER_WEBHOOK_DEADLINE = 12
 
   included do
     skip_before_action :check_authorization, only: [:health, :register_webhook]
@@ -49,9 +58,7 @@ module Api::V1::Accounts::Concerns::InboxHealthManagement
   end
 
   def register_webhook
-    register_channel_webhook
-
-    render json: { message: 'Webhook registered successfully' }, status: :ok
+    render json: register_channel_webhook, status: :ok
   rescue StandardError => e
     Rails.logger.error "[INBOX WEBHOOK] Webhook registration failed: #{e.message}"
     render json: { error: e.message }, status: :unprocessable_entity
@@ -68,17 +75,68 @@ module Api::V1::Accounts::Concerns::InboxHealthManagement
   private
 
   def fetch_health_data
-    return Whatsapp::HealthService.new(@inbox.channel).sync_health_status!(include_business_profile: true) if whatsapp_cloud_channel?
+    return Twilio::HealthService.new(channel: @inbox.channel).perform unless whatsapp_cloud_channel?
 
-    Twilio::HealthService.new(channel: @inbox.channel).perform
+    health_data = Whatsapp::HealthService.new(@inbox.channel).sync_health_status!(include_business_profile: true)
+    health_data.merge(routed_by_app_callback_only: routed_by_app_callback_only?(health_data))
   end
 
+  # The body of the 200. For WhatsApp it says which half landed and then where delivery goes; Twilio
+  # has only the confirmation to give.
   def register_channel_webhook
-    return Whatsapp::WebhookSetupService.new(@inbox.channel).register_callback if whatsapp_cloud_channel?
+    return register_twilio_webhook unless whatsapp_cloud_channel?
 
+    # The per-number override is allowed to be refused without taking the channel down, so
+    # "registered successfully" on its own would be the whole answer for a number Meta refused to
+    # point here. The answer says which half landed, and then where delivery goes.
+    deadline = Whatsapp::GraphDeadline.in(REGISTER_WEBHOOK_DEADLINE)
+    applied = Whatsapp::WebhookSetupService.new(@inbox.channel, deadline: deadline).register_callback
+    { message: 'Webhook registered successfully', callback_override_applied: applied }.merge(routing_after_attempt(deadline))
+  end
+
+  def register_twilio_webhook
     Twilio::WebhookSetupService.new(channel: @inbox.channel).perform
     # No-op unless voice is enabled; keeps the number's voice webhooks in sync alongside messaging.
     @inbox.channel.try(:reprovision_voice_webhooks!)
+    { message: 'Webhook registered successfully' }
+  end
+
+  # `callback_override_applied` answers one write, and it answers `false` for a refusal, for a 500
+  # and for a connection that closed with nothing to read alike: the rescue behind it is that wide
+  # on purpose, because the same refusal arrives in all three shapes (#568). Where delivery goes
+  # after the attempt is a different question, and the only authority on it is Meta. Reading it
+  # back is also what separates the two cases the write cannot: a refusal leaves the routing where
+  # it was, and an error that arrived after Meta stored the override leaves it changed.
+  #
+  # Best effort, and `routing_read_back` is why it is stated rather than implied: the write may
+  # well have landed, so a read that did not come back must not turn a registration into an error,
+  # and must not be answered as a routing nobody read.
+  def routing_after_attempt(deadline)
+    health_data = Whatsapp::HealthService.new(@inbox.channel, deadline: deadline).sync_health_status!
+
+    {
+      routing_read_back: true,
+      health: health_data.merge(routed_by_app_callback_only: routed_by_app_callback_only?(health_data))
+    }
+  rescue StandardError => e
+    Rails.logger.warn("[INBOX WEBHOOK] Registered, but reading the routing back failed: #{e.message}")
+    { routing_read_back: false }
+  end
+
+  # Meta answers three levels of webhook routing and delivery follows the most specific one that
+  # EXISTS, wherever it points. So this asks about existence, not about the URL: an override of
+  # its own, for this number or for the WhatsApp Business Account it belongs to, means the inbox
+  # owns its routing even when that override points somewhere wrong, which is a different problem
+  # and already has its own warning. Only when neither exists does delivery ride on the app's own
+  # callback, which belongs to the installation rather than to this inbox and can be pointed
+  # elsewhere at any time. Read on every request rather than stored, so it cannot go stale against
+  # Meta, and false when Meta answered no configuration at all, because not knowing is not a
+  # warning.
+  def routed_by_app_callback_only?(health_data)
+    configuration = health_data[:webhook_configuration]
+    return false if configuration.blank?
+
+    configuration.values_at('phone_number', 'whatsapp_business_account').all?(&:blank?)
   end
 
   def validate_health_supported_channel

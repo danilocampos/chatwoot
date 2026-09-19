@@ -17,17 +17,14 @@ module Enterprise::Channelable
 
       auditable_id = inbox.id
       auditable_type = 'Inbox'
-      audited_changes = saved_changes.except('updated_at', 'secret', 'auth_token', 'api_key_secret')
-      if is_a?(Channel::Whatsapp)
-        audited_changes = audited_changes.except('provider_credentials', 'provider_config', 'provider_connection', 'business_management_token')
-      end
+      audited_changes = saved_changes.except('updated_at', 'secret')
 
       return if audited_changes.blank?
 
       # skip audit log creation if the only change is whatsapp channel template update
       return if messaging_template_updates?(audited_changes)
 
-      Enterprise::AuditLog.create(
+      Enterprise::AuditLog.create!(
         auditable_id: auditable_id,
         auditable_type: auditable_type,
         action: 'update',

@@ -43,9 +43,20 @@ class Attachment < ApplicationRecord
   has_one_attached :file
   before_save :set_extension
   validate :acceptable_file
+  # Off by default on purpose. Only the paths where we compose a message and are about to send it
+  # turn this on, because a refusal on an ingested attachment raises inside the provider webhook
+  # and loses the whole message instead of storing an odd one.
+  attr_accessor :refuse_empty_file
+
+  validate :file_is_not_empty, if: :refuse_empty_file
   validates :external_url, length: { maximum: Limits::URL_LENGTH_LIMIT }
   enum file_type: { :image => 0, :audio => 1, :video => 2, :file => 3, :location => 4, :fallback => 5, :share => 6, :story_mention => 7,
                     :contact => 8, :ig_reel => 9, :ig_post => 10, :ig_story => 11, :embed => 12 }
+
+  METADATA_BUILDERS = {
+    location: :location_metadata, fallback: :fallback_data, contact: :contact_metadata,
+    audio: :audio_metadata, video: :video_metadata, embed: :embed_data
+  }.freeze
 
   def push_event_data
     return unless file_type
@@ -61,7 +72,25 @@ class Attachment < ApplicationRecord
   # NOTE: for External services use this methods since redirect doesn't work effectively in a lot of cases
   def download_url
     ActiveStorage::Current.url_options = Rails.application.routes.default_url_options if ActiveStorage::Current.url_options.blank?
-    file.attached? ? file.blob.url : ''
+    return '' unless file.attached?
+
+    normalize_opus_blob_content_type!
+    file.blob.url
+  end
+
+  # Blobs written before the identification was corrected still carry audio/opus, which is the
+  # type WhatsApp Cloud rejects with 131053. Catch them the next time the file is handed to an
+  # external service. New blobs never reach here: config/initializers/active_storage_opus_fix.rb
+  # settles the type before the object is written.
+  def normalize_opus_blob_content_type!
+    blob = file.blob
+    return unless blob.content_type == 'audio/opus'
+
+    # update!, not update_column, because the point is the callback: ActiveStorage rewrites the
+    # object's own Content-Type in the bucket on commit. Correcting only the column leaves the
+    # stored object as audio/opus, and on GCS that metadata is what a reader gets, so the fix
+    # would be invisible to the one service where it matters.
+    blob.update!(content_type: 'audio/ogg')
   end
 
   def thumb_url
@@ -82,20 +111,10 @@ class Attachment < ApplicationRecord
   private
 
   def metadata_for_file_type
-    case file_type.to_sym
-    when :location
-      location_metadata
-    when :fallback
-      fallback_data
-    when :contact
-      contact_metadata
-    when :audio
-      audio_metadata
-    when :embed
-      embed_data
-    else
-      file.attached? ? file_metadata : { data_url: external_url, thumb_url: '' }
-    end
+    builder = METADATA_BUILDERS[file_type.to_sym]
+    return send(builder) if builder
+
+    file.attached? ? file_metadata : { data_url: external_url, thumb_url: '' }
   end
 
   def embed_data
@@ -108,17 +127,37 @@ class Attachment < ApplicationRecord
     audio_file_data = base_data.merge(file_metadata)
     audio_file_data.merge(
       {
-        # Resolve via the configured Active Storage route so proxy setups (S3/CORS) are honoured.
-        data_url: inline_audio_url,
+        # Inline disposition so the player streams it instead of the browser downloading it; the
+        # route follows whichever Active Storage delivery method the install configured.
+        data_url: inline_storage_url,
         transcribed_text: meta&.[]('transcribed_text') || ''
       }
     )
   end
 
-  def inline_audio_url
+  # Same pair as audio: `file_url` carries no disposition, so a video is served as an
+  # attachment and Safari refuses to play a `<video>` whose response says so. The MIME also
+  # has to be in `content_types_allowed_inline`, or this URL is forced back to attachment.
+  #
+  # The two cases where the bytes are not ours keep the address they had: an attachment with
+  # no file is one we only hold a link to, and an Instagram incoming message is served from
+  # Meta's CDN on purpose.
+  def video_metadata
+    return { data_url: external_url, thumb_url: '' } unless file.attached?
+
+    metadata = file_metadata
+    return metadata if instagram_incoming_message?
+
+    metadata.merge({ data_url: inline_storage_url })
+  end
+
+  def inline_storage_url
     return '' unless file.attached?
 
-    url_for(file)
+    # Through whichever route the installation configured (redirect, or proxy for S3/CORS setups),
+    # the same way `url_for(file)` resolves it, but asking for inline: the audio and video players
+    # cannot use a URL that is served as an attachment.
+    Rails.application.routes.url_helpers.route_for(ActiveStorage.resolve_model_to_route, file, disposition: 'inline')
   end
 
   def file_metadata
@@ -157,7 +196,8 @@ class Attachment < ApplicationRecord
       id: id,
       message_id: message_id,
       file_type: file_type,
-      account_id: account_id
+      account_id: account_id,
+      meta: meta || {}
     }
   end
 
@@ -184,11 +224,21 @@ class Attachment < ApplicationRecord
   end
 
   def should_validate_file?
-    return unless file.attached?
+    return false unless file.attached?
     # we are only limiting attachment types in case of website widget
-    return unless message.inbox.channel_type == 'Channel::WebWidget'
+    return false unless message.inbox.channel_type == 'Channel::WebWidget'
 
     true
+  end
+
+  # Separate from `acceptable_file`, which runs only on a web widget inbox: which *types* an inbox
+  # accepts is a per-channel policy, while a file with no bytes is useless on every channel. Who
+  # gets refused is decided by `refuse_empty_file`, not by the message type, and the flag lives in
+  # memory only, so reloading a row that was stored before this existed never refuses it later.
+  def file_is_not_empty
+    return unless file.attached? && file.byte_size.to_i.zero?
+
+    errors.add(:file, 'is empty')
   end
 
   def acceptable_file

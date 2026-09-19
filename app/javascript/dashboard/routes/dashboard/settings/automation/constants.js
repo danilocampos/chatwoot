@@ -21,6 +21,18 @@ export const AUTOMATIONS = {
         filterOperators: OPERATOR_TYPES_1,
       },
       {
+        key: 'sender_id',
+        name: 'SENDER',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_1,
+      },
+      {
+        key: 'sender_type',
+        name: 'SENDER_TYPE',
+        inputType: 'search_select',
+        filterOperators: OPERATOR_TYPES_1,
+      },
+      {
         key: 'content',
         name: 'MESSAGE_CONTAINS',
         inputType: 'multi_text',
@@ -119,6 +131,10 @@ export const AUTOMATIONS = {
       {
         key: 'send_message',
         name: 'SEND_MESSAGE',
+      },
+      {
+        key: 'create_scheduled_message',
+        name: 'CREATE_SCHEDULED_MESSAGE',
       },
       {
         key: 'send_email_transcript',
@@ -257,6 +273,10 @@ export const AUTOMATIONS = {
       {
         key: 'send_message',
         name: 'SEND_MESSAGE',
+      },
+      {
+        key: 'create_scheduled_message',
+        name: 'CREATE_SCHEDULED_MESSAGE',
       },
       {
         key: 'send_email_transcript',
@@ -405,6 +425,10 @@ export const AUTOMATIONS = {
         name: 'SEND_MESSAGE',
       },
       {
+        key: 'create_scheduled_message',
+        name: 'CREATE_SCHEDULED_MESSAGE',
+      },
+      {
         key: 'send_email_transcript',
         name: 'SEND_EMAIL_TRANSCRIPT',
       },
@@ -545,6 +569,10 @@ export const AUTOMATIONS = {
         name: 'SEND_MESSAGE',
       },
       {
+        key: 'create_scheduled_message',
+        name: 'CREATE_SCHEDULED_MESSAGE',
+      },
+      {
         key: 'send_email_transcript',
         name: 'SEND_EMAIL_TRANSCRIPT',
       },
@@ -671,6 +699,10 @@ export const AUTOMATIONS = {
         name: 'SEND_MESSAGE',
       },
       {
+        key: 'create_scheduled_message',
+        name: 'CREATE_SCHEDULED_MESSAGE',
+      },
+      {
         key: 'send_email_transcript',
         name: 'SEND_EMAIL_TRANSCRIPT',
       },
@@ -685,6 +717,19 @@ export const AUTOMATIONS = {
     ],
   },
 };
+
+// An edit asks the same thing about the same subject as a creation does -- one message, its body, its
+// sender, its conversation -- so the trigger offers exactly the same conditions and the same actions.
+// Derived from the creation trigger rather than written out again, so the two cannot drift. #648
+//
+// A copy and not the same object under two names. It used to be the same object, and that identity
+// was load-bearing: it was the only thing that carried the account's custom attributes to this
+// trigger, because the pass in `useAutomation` named `message_created` alone. Nothing said so, and
+// any assignment to `AUTOMATIONS.message_created` or to its clone detached the two silently -- which
+// is exactly what a test did, and how the frontend suite went red. The pass now names both triggers
+// through `CUSTOM_ATTRIBUTE_EVENTS`, so the coupling is written down instead of being carried by a
+// reference. #667
+AUTOMATIONS.message_edited = structuredClone(AUTOMATIONS.message_created);
 
 export const AUTOMATION_RULE_EVENTS = [
   {
@@ -702,6 +747,10 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'message_created',
     value: 'MESSAGE_CREATED',
+  },
+  {
+    key: 'message_edited',
+    value: 'MESSAGE_EDITED',
   },
   {
     key: 'conversation_opened',
@@ -791,6 +840,11 @@ export const AUTOMATION_ACTION_TYPES = [
     inputType: 'textarea',
   },
   {
+    key: 'create_scheduled_message',
+    label: 'CREATE_SCHEDULED_MESSAGE',
+    inputType: 'scheduled_message',
+  },
+  {
     key: 'add_private_note',
     label: 'ADD_PRIVATE_NOTE',
     inputType: 'textarea',
@@ -807,6 +861,8 @@ export const AUTOMATION_ACTION_TYPES = [
   },
 ];
 
+// Default delay for scheduled messages (24 hours in minutes)
+export const DEFAULT_SCHEDULED_MESSAGE_DELAY_MINUTES = 24 * 60;
 export const DEFAULT_DELAY_MINUTES = 240; // 4 hours
 export const MIN_DELAY_MINUTES = 10;
 export const MAX_DELAY_MINUTES = 43200; // 30 days

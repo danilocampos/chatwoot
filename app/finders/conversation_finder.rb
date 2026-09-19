@@ -55,6 +55,22 @@ class ConversationFinder
     }
   end
 
+  # The conversations the caller names, scoped to what it is allowed to see and to nothing else.
+  # No status, no assignee, no group_type: those are the tab's question, and this one is about the
+  # conversations themselves. Filtering here would leave out exactly the rows the caller is asking
+  # after, which are the ones that stopped matching.
+  def perform_sync(candidate_ids)
+    return Conversation.none if candidate_ids.blank?
+
+    @conversations = Conversations::PermissionFilterService.new(
+      current_account.conversations.where(display_id: candidate_ids),
+      current_user,
+      current_account
+    ).perform
+
+    conversations_base_query
+  end
+
   private
 
   def set_up
@@ -64,6 +80,7 @@ class ConversationFinder
 
     find_all_conversations
     filter_by_status unless params[:q]
+    filter_by_group_type
     filter_by_team
     filter_by_labels
     filter_by_query
@@ -116,6 +133,12 @@ class ConversationFinder
       @conversations = @conversations.assigned
     end
     @conversations
+  end
+
+  def filter_by_group_type
+    return unless params[:group_type].present? && params[:group_type] != 'all'
+
+    @conversations = @conversations.where(group_type: params[:group_type])
   end
 
   def filter_by_conversation_type
@@ -198,7 +221,9 @@ class ConversationFinder
 
   def conversations
     @conversations = conversations_base_query
-    @conversations = Conversations::SortService.apply(@conversations, params[:sort_by])
+    # Pinned conversations lead the list regardless of the sort the agent picked, since every sort_on_* scope
+    # only appends to the ORDER BY.
+    @conversations = Conversations::SortService.apply(@conversations.pinned_first_for(current_user), params[:sort_by])
 
     if params[:updated_within].present?
       @conversations.where('conversations.updated_at > ?', Time.zone.now - params[:updated_within].to_i.seconds)

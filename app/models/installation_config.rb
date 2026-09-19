@@ -28,11 +28,33 @@ class InstallationConfig < ApplicationRecord
     OTEL_PROVIDER
   ]).freeze
 
-  # https://stackoverflow.com/questions/72970170/upgrading-to-rails-6-1-6-1-causes-psychdisallowedclass-tried-to-load-unspecif
-  # https://discuss.rubyonrails.org/t/cve-2022-32224-possible-rce-escalation-bug-with-serialized-columns-in-active-record/81017
-  # FIX ME : fixes breakage of installation config. we need to migrate.
-  # Fix configuration in application.rb
-  serialize :serialized_value, coder: YAML, type: ActiveSupport::HashWithIndifferentAccess, default: {}.with_indifferent_access
+  # The serialized_value column is jsonb but production data is mixed: older rows
+  # were written as YAML strings by upstream's serialize :coder => YAML chain,
+  # and some rows were written as native jsonb hashes. The stock YAML coder
+  # raises TypeError on native-hash rows. This coder reads either shape and
+  # always writes YAML strings so data converges on a single format over time.
+  class SerializedValueCoder # rubocop:disable Style/OneClassPerFile
+    def self.dump(value)
+      hash = value.is_a?(Hash) ? value : { value: value }
+      YAML.dump(hash.with_indifferent_access)
+    end
+
+    def self.load(value)
+      return {}.with_indifferent_access if value.blank?
+
+      case value
+      when String
+        YAML.safe_load(value, permitted_classes: [ActiveSupport::HashWithIndifferentAccess, Symbol])
+            .with_indifferent_access
+      when Hash
+        value.with_indifferent_access
+      else
+        {}.with_indifferent_access
+      end
+    end
+  end
+
+  serialize :serialized_value, coder: SerializedValueCoder
 
   before_validation :set_lock
   validates :name, presence: true

@@ -31,7 +31,7 @@ class AutoAssignment::AgentAssignmentService
     # Standalone assignment with its own save (create path). Write through conversation
     # itself so its already-registered after_commit callbacks actually fire.
     Conversation.transaction do
-      conversation.save if assign_under_lock
+      conversation.save if assign_under_lock # rubocop:disable Rails/SaveBang
     end
   end
 

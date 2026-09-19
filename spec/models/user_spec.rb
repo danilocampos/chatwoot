@@ -255,6 +255,89 @@ RSpec.describe User do
     end
   end
 
+  context 'when the user does not have signature position set' do
+    it 'returns the default signature position' do
+      expect(user.signature_position).to eq('top')
+    end
+  end
+
+  context 'when the user has signature position set' do
+    it 'returns the user signature position' do
+      user.update!(ui_settings: { signature_position: 'bottom' })
+
+      expect(user.signature_position).to eq('bottom')
+    end
+  end
+
+  context 'when the user does not have signature separator set' do
+    it 'returns the default signature separator' do
+      expect(user.signature_separator).to eq('blank')
+    end
+  end
+
+  context 'when the user has signature separator set' do
+    it 'returns the user signature separator' do
+      user.update!(ui_settings: { signature_separator: '--' })
+
+      expect(user.signature_separator).to eq('--')
+    end
+  end
+
+  describe '#send_devise_notification' do
+    let(:account) { create(:account, locale: 'pt_BR') }
+    let(:recipient) { create(:user, account: account) }
+    let(:mailer_double) { double(reset_password_instructions: double(deliver_later: nil)) } # rubocop:disable RSpec/VerifiedDoubles
+
+    before do
+      Current.reset
+      allow(Devise::Mailer).to receive(:with).and_return(mailer_double)
+    end
+
+    it 'falls back to the user account when Current.account is nil' do
+      recipient.send_reset_password_instructions
+
+      expect(Devise::Mailer).to have_received(:with).with(account: account)
+    end
+
+    it 'prefers Current.account when it is set' do
+      other_account = create(:account)
+      create(:account_user, user: recipient, account: other_account)
+      Current.account = other_account
+
+      recipient.send_reset_password_instructions
+
+      expect(Devise::Mailer).to have_received(:with).with(account: other_account)
+    end
+  end
+
+  describe 'destroy' do
+    it 'nullifies scheduled messages author when user has sent scheduled messages' do
+      account = create(:account)
+      create(:account_user, user: user, account: account)
+      inbox = create(:inbox, account: account)
+      contact = create(:contact, account: account)
+      conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
+      scheduled_message = create(:scheduled_message, account: account, inbox: inbox, conversation: conversation, author: user)
+      scheduled_message.update_column(:status, ScheduledMessage.statuses[:sent]) # rubocop:disable Rails/SkipsModelValidations
+
+      user.destroy!
+
+      expect(scheduled_message.reload.author_id).to be_nil
+    end
+
+    it 'nullifies created internal chat channels and destroys the user drafts' do
+      account = create(:account)
+      create(:account_user, user: user, account: account)
+      channel = create(:internal_chat_channel, account: account, created_by: user)
+      draft = create(:internal_chat_draft, account: account, user: user, channel: channel)
+
+      expect { user.destroy! }.not_to raise_error
+
+      expect(channel.reload.created_by_id).to be_nil
+      expect(InternalChat::Draft.exists?(draft.id)).to be(false)
+    end
+  end
+
   describe 'sync_user_sessions callback' do
     let(:user_with_tokens) do
       u = create(:user)

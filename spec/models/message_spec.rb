@@ -44,6 +44,58 @@ RSpec.describe Message do
           expect(conv_new_message.errors[:base]).to eq(['Too many messages'])
         end
       end
+
+      context 'when skip_message_flooding_validation is set' do
+        it 'skips message flooding validation when set to true' do
+          with_modified_env 'CONVERSATION_MESSAGE_PER_MINUTE_LIMIT': '2' do
+            conversation = message.conversation
+            create(:message, conversation: conversation)
+            conv_new_message = build(:message, conversation: message.conversation)
+
+            expect(conv_new_message.valid?).to be false
+            expect(conv_new_message.errors[:base]).to eq(['Too many messages'])
+
+            conv_new_message.skip_message_flooding_validation = true
+            conv_new_message.valid?
+            expect(conv_new_message.errors[:base]).to be_empty
+            expect(conv_new_message.valid?).to be true
+          end
+        end
+
+        it 'still validates other attributes when message flooding is skipped' do
+          message_without_required_fields = build(:message)
+          message_without_required_fields.account_id = nil
+          message_without_required_fields.inbox_id = nil
+          message_without_required_fields.skip_message_flooding_validation = true
+
+          expect(message_without_required_fields.valid?).to be false
+          expect(message_without_required_fields.errors[:account_id]).to include("can't be blank")
+          expect(message_without_required_fields.errors[:inbox_id]).to include("can't be blank")
+        end
+
+        it 'allows bulk message creation when skip_message_flooding_validation is true' do
+          with_modified_env 'CONVERSATION_MESSAGE_PER_MINUTE_LIMIT': '2' do
+            conversation = message.conversation
+
+            messages_to_create = 5
+            created_messages = []
+
+            messages_to_create.times do |i|
+              new_message = build(:message,
+                                  conversation: conversation,
+                                  content: "Bulk message #{i + 1}")
+              new_message.skip_message_flooding_validation = true
+
+              expect(new_message.valid?).to be true
+              new_message.save!
+              created_messages << new_message
+            end
+
+            expect(created_messages.count).to eq(messages_to_create)
+            expect(conversation.messages.count).to eq(messages_to_create + 1)
+          end
+        end
+      end
     end
 
     context 'when it validates source_id length' do
@@ -294,7 +346,7 @@ RSpec.describe Message do
     end
 
     it 'sets the waiting_since if there is an incoming message' do
-      conversation.update(waiting_since: nil)
+      conversation.update!(waiting_since: nil)
       message.message_type = :incoming
       message.save!
 
@@ -317,7 +369,7 @@ RSpec.describe Message do
         # Create initial customer message
         create(:message, conversation: conversation, message_type: :incoming,
                          created_at: 2.hours.ago)
-        conversation.update(waiting_since: 2.hours.ago)
+        conversation.update!(waiting_since: 2.hours.ago)
 
         # Bot responds
         create(:message, conversation: conversation, message_type: :outgoing,
@@ -866,6 +918,146 @@ RSpec.describe Message do
         expect(message).not_to receive(:reindex_for_search)
         message.save!
       end
+    end
+  end
+
+  describe '#reaction?' do
+    let(:conversation) { create(:conversation) }
+
+    it 'returns true when content_attributes carries is_reaction' do
+      message = create(:message, conversation: conversation, content_attributes: { is_reaction: true })
+      expect(message.reaction?).to be true
+    end
+
+    it 'returns false for regular messages' do
+      message = create(:message, conversation: conversation, content_attributes: {})
+      expect(message.reaction?).to be false
+    end
+  end
+
+  describe '#deleted?' do
+    let(:conversation) { create(:conversation) }
+
+    it 'returns true when the agent deleted the message' do
+      message = create(:message, conversation: conversation, content_attributes: { deleted: true })
+      expect(message.deleted?).to be true
+    end
+
+    it 'returns false for regular messages' do
+      message = create(:message, conversation: conversation, content_attributes: {})
+      expect(message.deleted?).to be false
+    end
+  end
+
+  describe '#update_under_lock!' do
+    let(:conversation) { create(:conversation) }
+    let(:message) { create(:message, conversation: conversation, content_attributes: {}) }
+
+    it 'keeps content_attributes another request wrote while this object went stale' do
+      described_class.find(message.id).update!(content_attributes: { deleted: true })
+
+      message.update_under_lock!(external_error: 'boom')
+
+      expect(message.reload.content_attributes).to include('deleted' => true, 'external_error' => 'boom')
+    end
+
+    it 'persists changes the caller left unsaved, as a plain update! would' do
+      # the template path mutates additional_attributes in place and relies on the source_id write to save it
+      message.additional_attributes = { 'format_version' => 'legacy' }
+
+      message.update_under_lock!(source_id: 'wamid.123')
+
+      expect(message.reload.source_id).to eq('wamid.123')
+      expect(message.additional_attributes).to include('format_version' => 'legacy')
+    end
+
+    it 'drops stale in-memory content_attributes rather than clobbering the row' do
+      described_class.find(message.id).update!(content_attributes: { deleted: true })
+      message.external_error = 'written from a stale copy'
+
+      message.update_under_lock!(source_id: 'wamid.123')
+
+      expect(message.reload).to be_deleted
+      expect(message.external_error).to be_nil
+    end
+  end
+
+  describe '.hide_removed_reactions' do
+    let(:conversation) { create(:conversation) }
+
+    it 'keeps regular non-reaction messages' do
+      regular = create(:message, conversation: conversation, content: 'Hello')
+      expect(conversation.messages.hide_removed_reactions).to include(regular)
+    end
+
+    it 'keeps active reactions (content present, not deleted)' do
+      reaction = create(:message,
+                        conversation: conversation,
+                        content: '👍',
+                        content_attributes: { is_reaction: true, in_reply_to_external_id: 'EXT' })
+      expect(conversation.messages.hide_removed_reactions).to include(reaction)
+    end
+
+    it 'hides reactions flagged as deleted' do
+      # Non-blank content here so the assertion can only succeed via the
+      # `deleted: true` branch (blank-content branch is covered separately).
+      removed = create(:message,
+                       conversation: conversation,
+                       content: '👍',
+                       content_attributes: { is_reaction: true, deleted: true })
+      expect(conversation.messages.hide_removed_reactions).not_to include(removed)
+    end
+
+    it 'hides reactions with blank content even when not flagged as deleted' do
+      blank_reaction = create(:message,
+                              conversation: conversation,
+                              content: '',
+                              content_attributes: { is_reaction: true })
+      expect(conversation.messages.hide_removed_reactions).not_to include(blank_reaction)
+    end
+  end
+
+  describe 'reactions do not trigger conversation lifecycle hooks' do
+    let(:conversation) { create(:conversation) }
+
+    it 'does not reopen a resolved conversation' do
+      conversation.resolved!
+      create(:message,
+             conversation: conversation,
+             message_type: :incoming,
+             content: '👍',
+             content_attributes: { is_reaction: true, in_reply_to_external_id: 'EXT' })
+      expect(conversation.reload.open?).to be false
+    end
+
+    it 'does not flip a pending conversation to open' do
+      pending_conv = create(:conversation, status: :pending)
+      create(:message,
+             conversation: pending_conv,
+             message_type: :incoming,
+             content: '👍',
+             content_attributes: { is_reaction: true, in_reply_to_external_id: 'EXT' })
+      expect(pending_conv.reload.pending?).to be true
+    end
+
+    it 'does not count toward first_reply_created_at' do
+      expect(conversation.first_reply_created_at).to be_nil
+      create(:message,
+             conversation: conversation,
+             message_type: :outgoing,
+             content: '👍',
+             content_attributes: { is_reaction: true, in_reply_to: 1 })
+      expect(conversation.reload.first_reply_created_at).to be_nil
+    end
+
+    it 'does not push an attended conversation back into the unattended queue' do
+      conversation.update!(first_reply_created_at: Time.current, waiting_since: nil)
+      create(:message,
+             conversation: conversation,
+             message_type: :incoming,
+             content: '👍',
+             content_attributes: { is_reaction: true, in_reply_to_external_id: 'EXT' })
+      expect(conversation.reload.waiting_since).to be_nil
     end
   end
 end

@@ -14,7 +14,7 @@ class Conversations::MessageWindowService
 
   private
 
-  def messaging_window
+  def messaging_window # rubocop:disable Metrics/CyclomaticComplexity
     case @conversation.inbox.channel_type
     when 'Channel::Api'
       api_messaging_window
@@ -25,7 +25,9 @@ class Conversations::MessageWindowService
     when 'Channel::Tiktok'
       tiktok_messaging_window
     when 'Channel::Whatsapp'
-      whatsapp_messaging_window
+      return if @conversation.inbox.channel.session_family?
+
+      MESSAGING_WINDOW_24_HOURS
     when 'Channel::TwilioSms'
       twilio_messaging_window
     end
@@ -44,10 +46,6 @@ class Conversations::MessageWindowService
   end
 
   # Check medium of the inbox to determine the messaging window
-  def whatsapp_messaging_window
-    MESSAGING_WINDOW_24_HOURS unless @conversation.inbox.channel.session_provider?
-  end
-
   def twilio_messaging_window
     @conversation.inbox.channel.medium == 'whatsapp' ? MESSAGING_WINDOW_24_HOURS : nil
   end

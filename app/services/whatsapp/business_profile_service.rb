@@ -1,4 +1,6 @@
 class Whatsapp::BusinessProfileService
+  include Whatsapp::GraphRequestOptions
+
   BASE_URI = 'https://graph.facebook.com'.freeze
   FIELDS = %w[about address description email profile_picture_url websites vertical].freeze
 
@@ -10,6 +12,7 @@ class Whatsapp::BusinessProfileService
   def fetch
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{@channel.provider_config['phone_number_id']}/whatsapp_business_profile",
+      **GRAPH_REQUEST_OPTIONS,
       query: {
         fields: FIELDS.join(','),
         access_token: @channel.provider_config['api_key']

@@ -269,6 +269,42 @@ export const icons = {
     width: 24,
     height: 24,
   },
+  baileys: {
+    body: `
+    <circle cx="50" cy="50" r="47" fill="none" stroke="currentColor" stroke-width="3"/>
+    <path d="M28 26 L72 16 L42 54 L42 34 Z" fill="currentColor"/>
+    <path d="M72 74 L28 84 L58 46 L58 66 Z" fill="currentColor"/>
+    `,
+    width: 100,
+    height: 100,
+  },
+  zapi: {
+    body: `<path stroke="currentColor"
+     d="M 0.15050214,31.611667 -6.727909e-7,31.2227 0.89864166,27.585988 1.8729551,26.090955 2.8472685,24.595922 15.789266,11.660059 4.1063138,11.40095 4.1544241,11.012276 C 4.2020703,10.627325 4.3819706,9.9942713 5.5949694,5.9429145 5.9390689,4.7936802 6.5411296,3.3109868 6.9329149,2.6479859 L 7.645179,1.4426365 9.5522129,-2.6631488e-6 H 47.999999 L 47.954743,0.90347077 47.909486,1.8069344 46.293465,3.2388989 H 18.637918 l -0.162915,0.26143 -0.162916,0.26143 0.330216,1.0318136 h 23.740162 v 0.4134697 c 0,0.2274083 -0.196756,0.7438048 -0.437239,1.1475694 l -0.437239,0.7340801 -0.542525,0.1444794 c -0.298389,0.079423 -3.834608,0.147858 -7.858122,0.151981 l -7.315596,0.00783 -0.698903,0.4393434 0.08817,0.618481 0.08817,0.6184712 11.496318,0.2591188 v 1.2955455 l -2.331555,1.165981 h -5.153988 l -9.441753,9.256746 0.367355,0.589484 h 14.050945 l -0.218768,0.712554 c -0.120325,0.391915 -0.610257,1.93279 -1.088704,3.424199 l -0.869975,2.711645 -0.791895,1.169408 -0.791895,1.169408 -1.045057,0.584401 -1.045057,0.584391 -28.10287818,0.0078 z"/>`,
+    width: 48,
+    height: 32,
+  },
+  uazapi: {
+    body: `<g fill="none" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="4.05" r="1.75"/>
+    <path d="M12 5.8v1.95"/>
+    <path d="M5.8 7.75h12.43a1.5 1.5 0 0 1 1.5 1.5v7.35a1.5 1.5 0 0 1-1.5 1.5H10.1l-3.5 3.52V18.1H5.8a1.5 1.5 0 0 1-1.5-1.5V9.25a1.5 1.5 0 0 1 1.5-1.5Z"/>
+    <path d="M4.3 11.4a1.6 1.6 0 0 0 0 3.2"/>
+    <path d="M19.7 11.4a1.6 1.6 0 0 1 0 3.2"/>
+    <circle cx="8.55" cy="13" r="1.7"/>
+    <circle cx="15.45" cy="13" r="1.7"/>
+    </g>`,
+    width: 24,
+    height: 24,
+  },
+  'whatsapp-native': {
+    body: `<g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="6" y="6" width="12" height="12" rx="2.6"/>
+    <path d="M9.5 6V3.2M14.5 6V3.2M9.5 18v2.8M14.5 18v2.8M6 9.5H3.2M6 14.5H3.2M18 9.5h2.8M18 14.5h2.8"/>
+    </g>`,
+    width: 24,
+    height: 24,
+  },
   'voice-call': {
     body: `<mask id="cvc" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16"><rect width="16" height="16" fill="#fff"/><circle cx="12" cy="4" r="4" fill="#000"/></mask><g mask="url(#cvc)"><path d="M7.916 10.784a.5.5 0 0 0 .607-.152L8.7 10.4a1 1 0 0 1 .8-.4H11a1 1 0 0 1 1 1v1.5a1 1 0 0 1-1 1 9 9 0 0 1-9-9 1 1 0 0 1 1-1h1.5a1 1 0 0 1 1 1V6a1 1 0 0 1-.4.8l-.234.176a.5.5 0 0 0-.146.616 7 7 0 0 0 3.196 3.192" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g><circle cx="12" cy="4" r="4" fill="currentColor" fill-opacity="0.15"/><path d="M10.4 3.2v1.6M12 2.4v3.2m1.6-2.4v1.6" stroke="currentColor" stroke-width=".833" stroke-linecap="round" stroke-linejoin="round"/>`,
     width: 16,

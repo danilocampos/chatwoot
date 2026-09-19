@@ -3,6 +3,7 @@ import { useStore, useStoreGetters } from 'dashboard/composables/store';
 import wootConstants from 'dashboard/constants/globals';
 
 export const DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER = Object.freeze([
+  { name: 'scheduled_messages' },
   { name: 'conversation_actions' },
   { name: 'macros' },
   { name: 'conversation_info' },
@@ -47,7 +48,11 @@ const useConversationSidebarItemsOrder = uiSettings => {
     // If the sidebar order doesn't have the new elements, then add them to the list.
     DEFAULT_CONVERSATION_SIDEBAR_ITEMS_ORDER.forEach(item => {
       if (!itemsOrderCopy.find(i => i.name === item.name)) {
-        itemsOrderCopy.push(item);
+        if (item.name === 'scheduled_messages') {
+          itemsOrderCopy.unshift(item);
+        } else {
+          itemsOrderCopy.push(item);
+        }
       }
     });
     return itemsOrderCopy;
@@ -128,7 +133,7 @@ const isEditorHotKeyEnabled = (key, uiSettings) => {
     enter_to_send_enabled: enterToSendEnabled,
   } = uiSettings.value || {};
   if (!editorMessageKey) {
-    return key === (enterToSendEnabled ? 'enter' : 'cmd_enter');
+    return key === (enterToSendEnabled ? 'cmd_enter' : 'enter');
   }
   return editorMessageKey === key;
 };

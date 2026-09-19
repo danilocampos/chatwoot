@@ -26,6 +26,7 @@ const {
   DISABLE_META_INBOX_CREATION: disableMetaInboxCreation,
   DISABLE_META_MESSAGE_SENDING: disableMetaMessageSending,
   DEPLOYMENT_ENV: deploymentEnv,
+  BAILEYS_WHATSAPP_GROUPS_ENABLED: baileysWhatsappGroupsEnabled,
   ACTIVE_PLATFORM_BANNERS: activePlatformBanners,
 } = window.globalConfig || {};
 
@@ -54,6 +55,7 @@ const state = {
   termsURL,
   widgetBrandURL,
   isEnterprise: parseBoolean(isEnterprise),
+  baileysWhatsappGroupsEnabled: parseBoolean(baileysWhatsappGroupsEnabled),
   activePlatformBanners: activePlatformBanners || [],
 };
 

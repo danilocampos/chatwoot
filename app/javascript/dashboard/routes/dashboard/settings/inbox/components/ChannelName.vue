@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import { useStoreGetters } from 'dashboard/composables/store';
 import { computed } from 'vue';
+import { isSessionProvider } from 'dashboard/helper/whatsappSession';
 
 const props = defineProps({
   channelType: {
@@ -9,6 +10,10 @@ const props = defineProps({
     required: true,
   },
   medium: {
+    type: String,
+    default: '',
+  },
+  provider: {
     type: String,
     default: '',
   },
@@ -43,6 +48,13 @@ const twilioChannelName = () => {
   return t(`INBOX_MGMT.CHANNELS.TWILIO_SMS`);
 };
 
+const whatsappChannelName = () => {
+  if (isSessionProvider(props.provider)) {
+    return t(`INBOX_MGMT.CHANNELS.WHATSAPP_${props.provider.toUpperCase()}`);
+  }
+  return t(`INBOX_MGMT.CHANNELS.WHATSAPP`);
+};
+
 const readableChannelName = computed(() => {
   if (props.channelType === 'Channel::Api') {
     return globalConfig.value.apiChannelName || t('INBOX_MGMT.CHANNELS.API');
@@ -52,6 +64,9 @@ const readableChannelName = computed(() => {
       return t('INBOX_MGMT.CHANNELS.VOICE');
     }
     return twilioChannelName();
+  }
+  if (props.channelType === 'Channel::Whatsapp') {
+    return whatsappChannelName();
   }
   return t(`INBOX_MGMT.CHANNELS.${i18nMap[props.channelType]}`);
 });

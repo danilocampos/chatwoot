@@ -12,6 +12,12 @@ const props = defineProps({
     type: Array,
     required: true,
   },
+  // Read by the scheduled-message action, whose own fields depend on what the rule is
+  // conditioned on.
+  conditions: {
+    type: Array,
+    default: () => [],
+  },
   getActionDropdownValues: {
     type: Function,
     required: true,
@@ -67,6 +73,8 @@ const hasActionErrors = computed(() =>
         :key="i"
         v-model="actions[i]"
         :action-types="actionTypes"
+        :conditions="conditions"
+        dropdown-max-height="max-h-72"
         :dropdown-values="getActionDropdownValues(action.action_name)"
         :show-action-input="showActionInput(actionTypes, action.action_name)"
         :error-message="

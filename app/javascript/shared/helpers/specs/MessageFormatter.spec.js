@@ -175,6 +175,33 @@ After`;
     });
   });
 
+  describe('conversation mentions', () => {
+    it('renders conversation mention with # prefix', () => {
+      const message = '[@42](mention://conversation/42/42)';
+      const result = new MessageFormatter(message).formattedMessage;
+      expect(result).toContain('#42');
+      expect(result).toContain('prosemirror-mention-conversation');
+      expect(result).not.toContain('@42');
+    });
+
+    it('includes data-conversation-id attribute', () => {
+      const message = '[@99](mention://conversation/99/99)';
+      const result = new MessageFormatter(message).formattedMessage;
+      expect(result).toContain('data-conversation-id="99"');
+    });
+
+    it('renders both user and conversation mentions in mixed content', () => {
+      const message =
+        'Hey [@John](mention://user/1/John) check [@42](mention://conversation/42/42)';
+      const result = new MessageFormatter(message).formattedMessage;
+      expect(result).toContain(
+        '<span class="prosemirror-mention-node">@John</span>'
+      );
+      expect(result).toContain('#42');
+      expect(result).toContain('prosemirror-mention-conversation');
+    });
+  });
+
   // Byte-exact editor serializer output for Enter / Shift+Enter combinations.
   // An empty line is stored as a `\` hard-break chain and an underline below
   // it is escaped (`\--`, `\-`, `\==`); the bubble must render no backslash

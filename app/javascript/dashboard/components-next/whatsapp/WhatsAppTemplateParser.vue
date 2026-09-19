@@ -36,6 +36,10 @@ const props = defineProps({
       return true;
     },
   },
+  sendButtonLabel: {
+    type: String,
+    default: '',
+  },
   sendRenderedContent: {
     type: Boolean,
     default: false,
@@ -47,6 +51,12 @@ const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 const { t } = useI18n();
 
 const processedParams = ref({});
+
+const sendButtonText = computed(() => {
+  return (
+    props.sendButtonLabel || t('WHATSAPP_TEMPLATES.PARSER.SEND_MESSAGE_LABEL')
+  );
+});
 
 const languageLabel = computed(() => {
   return `${t('WHATSAPP_TEMPLATES.PARSER.LANGUAGE')}: ${props.template.language || DEFAULT_LANGUAGE}`;
@@ -350,6 +360,7 @@ defineExpose({
       :go-back="goBack"
       :is-valid="!v$.$invalid"
       :disabled="isFormInvalid"
+      :send-button-text="sendButtonText"
     />
   </div>
 </template>

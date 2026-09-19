@@ -140,8 +140,8 @@ describe Twilio::IncomingMessageService do
           Body: 'testing3'
         }
 
-        twilio_channel.inbox.update(lock_to_single_conversation: true)
-        conversation.update(status: 'resolved')
+        twilio_channel.inbox.update!(lock_to_single_conversation: true)
+        conversation.update!(status: 'resolved')
         described_class.new(params: params).perform
         # message appended to the last conversation
         expect(conversation.reload.messages.last.content).to eq('testing3')
@@ -157,8 +157,8 @@ describe Twilio::IncomingMessageService do
           Body: 'testing3'
         }
 
-        twilio_channel.inbox.update(lock_to_single_conversation: false)
-        conversation.update(status: 'resolved')
+        twilio_channel.inbox.update!(lock_to_single_conversation: false)
+        conversation.update!(status: 'resolved')
         described_class.new(params: params).perform
         expect(twilio_channel.inbox.conversations.count).to eq(2)
         expect(twilio_channel.inbox.conversations.last.messages.last.content).to eq('testing3')
@@ -173,8 +173,8 @@ describe Twilio::IncomingMessageService do
           Body: 'testing3'
         }
 
-        twilio_channel.inbox.update(lock_to_single_conversation: false)
-        conversation.update(status: Conversation.statuses.except('resolved').keys.sample)
+        twilio_channel.inbox.update!(lock_to_single_conversation: false)
+        conversation.update!(status: Conversation.statuses.except('resolved').keys.sample)
         described_class.new(params: params).perform
         expect(twilio_channel.inbox.conversations.count).to eq(1)
         expect(twilio_channel.inbox.conversations.last.messages.last.content).to eq('testing3')

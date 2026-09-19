@@ -18,6 +18,9 @@ class Whatsapp::MediaUploadService
   def perform
     return unless direct_upload_enabled? && @attachment.file.attached?
 
+    # Meta refuses `audio/opus`. The link path corrects the blob on `download_url` (fazer-ai/chatwoot#223);
+    # this path reads the blob's content type straight into the upload, so it corrects it first.
+    @attachment.normalize_opus_blob_content_type!
     response = upload
     media_id = response.body['id'] if response.body.is_a?(Hash)
     return { 'id' => media_id } if response.success? && media_id.present?

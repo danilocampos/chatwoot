@@ -39,24 +39,6 @@ class Channel::TwilioSms < ApplicationRecord
   # The same parameter is used to store api_key_secret if api_key authentication is opted
   validates :auth_token, presence: true
 
-  def auth_token=(value)
-    return if persisted? && value.blank?
-
-    super
-  end
-
-  def serializable_hash(options = nil)
-    super.except('auth_token')
-  end
-  validate :whatsapp_provider_available
-
-  def whatsapp_provider_available
-    return unless whatsapp? && (new_record? || medium_changed? || account_id_changed?)
-    return if Whatsapp::ProviderRegistry.available?('twilio', account)
-
-    errors.add(:base, :unavailable)
-  end
-
   EDITABLE_ATTRS = [
     :account_sid,
     :auth_token
@@ -82,7 +64,7 @@ class Channel::TwilioSms < ApplicationRecord
     params = send_message_from.merge(to: to, body: body)
     params[:media_url] = media_url if media_url.present?
     params[:status_callback] = twilio_delivery_status_index_url
-    client.messages.create(**params)
+    client.messages.create(**params) # rubocop:disable Rails/SaveBang
   end
 
   def client

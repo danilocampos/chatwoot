@@ -14,7 +14,7 @@ RSpec.describe ContactInbox do
     it 'does not get updated on object update' do
       obj = contact_inbox
       old_token = obj.pubsub_token
-      obj.update(source_id: '234234323')
+      obj.update!(source_id: '234234323')
       expect(obj.pubsub_token).to eq(old_token)
     end
 
@@ -31,7 +31,7 @@ RSpec.describe ContactInbox do
       expect(described_class.where(id: obj.id).pick(:pubsub_token)).to be_nil
 
       new_token = obj.pubsub_token
-      obj.update(source_id: '234234323')
+      obj.update!(source_id: '234234323')
       # the generated token shoul be persisted in db
       expect(obj.pubsub_token).to eq(new_token)
     end

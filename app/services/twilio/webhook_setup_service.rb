@@ -33,7 +33,7 @@ class Twilio::WebhookSetupService
     else
       twilio_client
         .incoming_phone_numbers(phone_number.sid)
-        .update(sms_method: 'POST', sms_url: twilio_callback_index_url)
+        .update(sms_method: 'POST', sms_url: twilio_callback_index_url) # rubocop:disable Rails/SaveBang
     end
   end
 
@@ -46,7 +46,7 @@ class Twilio::WebhookSetupService
       return
     end
 
-    twilio_client.messaging.v2.channels_senders(sender.sid).update(
+    twilio_client.messaging.v2.channels_senders(sender.sid).update( # rubocop:disable Rails/SaveBang
       messaging_v2_channels_sender_requests_update: {
         webhook: {
           callback_url: twilio_callback_index_url,

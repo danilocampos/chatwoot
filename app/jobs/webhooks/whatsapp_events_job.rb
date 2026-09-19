@@ -5,7 +5,18 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   # holder finishes and silently drop its message.
   retry_on LockAcquisitionError, wait: 2.seconds, attempts: 20
 
+  # The incoming services take a second lock, on the chat, and that one is also taken by
+  # the history import, which leases it for a whole batch. A budget sized for live
+  # contention runs out while the import is still writing, and the message this job is
+  # carrying is gone: nine were lost that way on a single reconnect, to a group that
+  # happened to be importing. So the budget is derived from the lease rather than picked,
+  # with half again on top for the batch that has to finish after the lease is taken.
+  CHAT_LOCK_RETRY_WAIT = 15.seconds
+  CHAT_LOCK_RETRY_ATTEMPTS = (Whatsapp::Session::Inbound::Locks::IMPORT_CHAT_LOCK_TTL.to_i / CHAT_LOCK_RETRY_WAIT.to_i * 1.5).ceil
+  retry_on Whatsapp::Session::Inbound::Locks::Busy, wait: CHAT_LOCK_RETRY_WAIT, attempts: CHAT_LOCK_RETRY_ATTEMPTS
+
   def perform(params = {})
+    dump_raw_payload(params)
     channel = find_channel_from_whatsapp_business_payload(params)
 
     if channel_is_inactive?(channel)
@@ -91,12 +102,27 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
       service_params = { inbox: channel.inbox, params: params }
       service_params[:locked_sender_id] = locked_sender_id if locked_sender_id.present?
       Whatsapp::IncomingMessageWhatsappCloudService.new(**service_params).perform
+    when 'baileys'
+      Whatsapp::IncomingMessageBaileysService.new(inbox: channel.inbox, params: params).perform
+    when 'zapi'
+      Whatsapp::IncomingMessageZapiService.new(inbox: channel.inbox, params: params).perform
     else
       Whatsapp::IncomingMessageService.new(inbox: channel.inbox, params: params).perform
     end
   end
 
   private
+
+  # Debug aid for non-production only: set WHATSAPP_WEBHOOK_DEBUG=true to log the
+  # raw inbound webhook payload (Baileys or Cloud) so you can capture a real
+  # Click-to-WhatsApp ad referral / externalAdReply and replay it later. Logs
+  # full message content, so it never runs in production and is off by default.
+  def dump_raw_payload(params)
+    return if Rails.env.production?
+    return unless ActiveModel::Type::Boolean.new.cast(ENV.fetch('WHATSAPP_WEBHOOK_DEBUG', false))
+
+    Rails.logger.info("[WhatsappWebhookDebug] #{params.to_json}")
+  end
 
   # Echo payloads reverse the fields — `from` is the business number and `to` is the contact.
   # Returns nil for status-only webhooks so they bypass the lock.

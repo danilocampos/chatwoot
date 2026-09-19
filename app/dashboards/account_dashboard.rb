@@ -36,7 +36,10 @@ class AccountDashboard < Administrate::BaseDashboard
     status: AccountStatusField.with_options(collection: [%w[Active active], %w[Suspended suspended]]),
     suspension_history: SuspensionHistoryField,
     account_users: Field::HasMany,
-    custom_attributes: Field::String
+    custom_attributes: Field::String,
+    hide_agent_unassigned_tab: Field::Boolean,
+    hide_agent_all_tab: HideAgentAllTabField,
+    disable_agent_message_deletion: Field::Boolean
   }.merge(enterprise_attribute_types).freeze
 
   # COLLECTION_ATTRIBUTES
@@ -74,6 +77,9 @@ class AccountDashboard < Administrate::BaseDashboard
     suspension_history
     conversations
     account_users
+    hide_agent_unassigned_tab
+    hide_agent_all_tab
+    disable_agent_message_deletion
   ] + enterprise_show_page_attributes).freeze
 
   # FORM_ATTRIBUTES
@@ -92,6 +98,9 @@ class AccountDashboard < Administrate::BaseDashboard
     name
     locale
     status
+    hide_agent_unassigned_tab
+    hide_agent_all_tab
+    disable_agent_message_deletion
   ] + enterprise_form_attributes).freeze
 
   # COLLECTION_FILTERS

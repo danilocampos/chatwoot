@@ -406,6 +406,7 @@ defineExpose({ open, close });
       <AutomationActions
         v-model="automation.actions"
         :action-types="automationActionTypes"
+        :conditions="automation.conditions"
         :get-action-dropdown-values="getActionDropdownValues"
         :files="automation.files"
         :show-file-name="isEditMode"

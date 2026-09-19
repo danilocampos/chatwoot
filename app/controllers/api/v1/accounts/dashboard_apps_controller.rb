@@ -35,6 +35,7 @@ class Api::V1::Accounts::DashboardAppsController < Api::V1::Accounts::BaseContro
   def permitted_payload
     params.require(:dashboard_app).permit(
       :title,
+      :show_on_sidebar,
       content: [:url, :type]
     )
   end

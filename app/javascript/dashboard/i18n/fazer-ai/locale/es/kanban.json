@@ -1,0 +1,77 @@
+{
+  "KANBAN": {
+    "FUNNELS": {
+      "LABEL": "Embudo",
+      "DEFAULT": "Embudo predeterminado",
+      "NEW": "Nuevo embudo",
+      "EDIT": "Editar embudo",
+      "NAME": "Nombre del embudo",
+      "HINT": "Hasta 20 etapas. Mueve las conversaciones de una etapa antes de eliminarla.",
+      "STAGE": "Etapa {number}",
+      "UP": "Subir etapa",
+      "DOWN": "Bajar etapa",
+      "REMOVE": "Eliminar",
+      "ADD_STAGE": "Añadir etapa",
+      "SAVE": "Guardar embudo",
+      "CANCEL": "Cancelar",
+      "ERROR": "No se pudo guardar el embudo. Revisa los nombres y mueve las conversaciones de las etapas eliminadas.",
+      "FETCH_ERROR": "No se pudieron cargar los embudos. Actualiza la página para volver a intentarlo.",
+      "MOVE": "Mover a embudo o etapa",
+      "MOVING": "Mover {name}",
+      "DESTINATION_STAGE": "Etapa de destino",
+      "CONFIRM_MOVE": "Mover conversación"
+    },
+    "TITLE": "Kanban de conversaciones",
+    "CONVERSATION_COUNT": "{count} conversaciones",
+    "REFRESH": "Actualizar",
+    "EMPTY_COLUMN": "No hay conversaciones en esta etapa",
+    "LIMIT_NOTICE": "Mostrando las {count} conversaciones más recientes. Use los filtros para refinar el tablero.",
+    "STATUS": {
+      "NOVO_LEAD": "Nuevo lead",
+      "AQUECIMENTO": "Calentamiento",
+      "QUALIFICADO": "Calificado",
+      "CONVERTIDO": "Convertido",
+      "PERDIDO": "Perdido"
+    },
+    "TEMPERATURE": {
+      "QUENTE": "🔥 Caliente",
+      "MORNO": "☀️ Templado",
+      "FRIO": "❄️ Frío"
+    },
+    "FILTERS": {
+      "SEARCH": "Buscar por nombre o teléfono",
+      "TEMPERATURE": "Temperatura",
+      "SCORE": "Puntuación",
+      "INBOX": "Bandeja de entrada",
+      "ALL_TEMPERATURES": "Todas las temperaturas",
+      "ALL_SCORES": "Todas las puntuaciones",
+      "ALL_INBOXES": "Todas las bandejas",
+      "SCORE_HIGH": "Puntuación alta (70-100)",
+      "SCORE_MEDIUM": "Puntuación media (40-69)",
+      "SCORE_LOW": "Puntuación baja (0-39)",
+      "APPLY": "Aplicar",
+      "CLEAR": "Limpiar"
+    },
+    "CARD": {
+      "UNNAMED": "Contacto sin nombre",
+      "NO_PHONE": "Sin teléfono",
+      "NO_ACTIVITY": "Sin actividad",
+      "MESSAGE_COUNT": "{count} mensajes"
+    },
+    "EXPORT": {
+      "BUTTON": "Exportar columna",
+      "SUCCESS": "Columna exportada correctamente",
+      "ERROR": "No se pudo exportar esta columna",
+      "NO_DATA": "No hay conversaciones para exportar"
+    },
+    "API": {
+      "SUCCESS": {
+        "MOVE": "Conversación movida correctamente"
+      },
+      "ERROR": {
+        "FETCH": "No se pudo cargar el Kanban",
+        "MOVE": "No se pudo mover la conversación"
+      }
+    }
+  }
+}

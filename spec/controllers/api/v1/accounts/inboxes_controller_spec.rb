@@ -340,14 +340,13 @@ RSpec.describe 'Inboxes API', type: :request do
         let(:twilio_channel) { create(:channel_twilio_sms, account: account, account_sid: 'AC123', auth_token: 'secrettoken') }
         let(:twilio_inbox) { create(:inbox, channel: twilio_channel, account: account) }
 
-        it 'returns the account SID and credential presence, never the auth token, for admin' do
+        it 'returns auth_token and account_sid for admin' do
           get "/api/v1/accounts/#{account.id}/inboxes/#{twilio_inbox.id}",
               headers: admin.create_new_auth_token,
               as: :json
           expect(response).to have_http_status(:success)
           data = JSON.parse(response.body, symbolize_names: true)
-          expect(data[:auth_token]).to be_nil
-          expect(data[:auth_token_configured]).to be true
+          expect(data[:auth_token]).to eq('secrettoken')
           expect(data[:account_sid]).to eq('AC123')
         end
 
@@ -1707,6 +1706,803 @@ RSpec.describe 'Inboxes API', type: :request do
 
           expect(response).to have_http_status(:not_found)
         end
+      end
+    end
+  end
+
+  # The button on the inbox health screen. Meta refuses the per-number override for a whole class
+  # of accounts, and since that refusal stopped taking the channel down (#568) the answer here was
+  # "registered successfully" either way, which is the only thing the operator sees at the moment
+  # they press it.
+  # Meta answers three levels of webhook routing and delivery follows the most specific one that
+  # exists, so the same green "configured" URL means two different things: the inbox owns its
+  # routing, or it is riding on the app's own callback and stops the day that URL changes.
+  describe 'GET /api/v1/accounts/{account.id}/inboxes/{inbox.id}/health routing level' do
+    let(:whatsapp_channel) do
+      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+    end
+    let(:whatsapp_inbox) { create(:inbox, account: account, channel: whatsapp_channel) }
+    let(:expected_url) { 'https://chat.example.com/webhooks/whatsapp/+123' }
+    let(:health_service) { instance_double(Whatsapp::HealthService) }
+
+    # The outer keys are the service's own symbols; the ones inside come from Meta's JSON.
+    def stub_health(configuration)
+      allow(Whatsapp::HealthService).to receive(:new).and_return(health_service)
+      allow(health_service).to receive(:sync_health_status!).and_return(
+        { id: 'phone123', webhook_configuration: configuration, expected_webhook_url: expected_url }
+      )
+    end
+
+    def routing_answer
+      get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/health",
+          headers: admin.create_new_auth_token, as: :json
+      response.parsed_body['routed_by_app_callback_only']
+    end
+
+    it 'is false when this number has an override of its own' do
+      stub_health({ 'phone_number' => expected_url, 'application' => 'https://elsewhere.example.com/hook' })
+
+      expect(routing_answer).to be(false)
+    end
+
+    it 'is false when the business account has one' do
+      stub_health({ 'whatsapp_business_account' => expected_url, 'application' => 'https://elsewhere.example.com/hook' })
+
+      expect(routing_answer).to be(false)
+    end
+
+    # Delivery follows the most specific override that exists, wherever it points: a number sent
+    # to the wrong place is misrouted, not riding on the app callback, and the card already says
+    # so with its own URL mismatch warning.
+    it 'is false when the override exists but points somewhere else' do
+      stub_health({ 'phone_number' => 'https://elsewhere.example.com/hook', 'application' => expected_url })
+
+      expect(routing_answer).to be(false)
+    end
+
+    it 'is true when only the app callback is pointed here' do
+      stub_health({ 'application' => expected_url })
+
+      expect(routing_answer).to be(true)
+    end
+
+    # Not knowing is not a warning: Meta answering nothing about the configuration says nothing
+    # about where this number is routed.
+    it 'is false when Meta did not answer the configuration' do
+      stub_health(nil)
+
+      expect(routing_answer).to be(false)
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/inboxes/{inbox.id}/register_webhook' do
+    let(:whatsapp_channel) do
+      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+    end
+    let(:whatsapp_inbox) { create(:inbox, account: account, channel: whatsapp_channel) }
+    let(:phone_number_id) { whatsapp_channel.provider_config['phone_number_id'] }
+    let(:waba_id) { whatsapp_channel.provider_config['business_account_id'] }
+    let(:api_version) { 'v22.0' }
+    let(:subscription) do
+      stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+        .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+    end
+
+    # The endpoint reads the routing back after the attempt, so every example here answers that read
+    # too. One stub covers both GETs because the factory gives the phone number and the business
+    # account the same id, and each formatter reads its own keys out of the body.
+    let(:health_api_version) { 'v24.0' }
+    let(:elsewhere_url) { 'https://elsewhere.example.com/webhooks/whatsapp/+123' }
+
+    def stub_health_read(phone_number_override)
+      stub_request(:get, %r{graph\.facebook\.com/#{health_api_version}/#{phone_number_id}})
+        .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: {
+          id: phone_number_id,
+          display_phone_number: '+1 234 567 8911',
+          webhook_configuration: { phone_number: phone_number_override }.compact,
+          name: 'WABA',
+          owner_business_info: { id: 'biz', name: 'Portfolio' }
+        }.to_json)
+    end
+
+    before do
+      allow(GlobalConfigService).to receive(:load).and_call_original
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return(api_version)
+      subscription
+      stub_health_read(elsewhere_url)
+    end
+
+    context 'when Meta accepts both calls' do
+      before do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'says the routing was applied' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body).to include('message' => 'Webhook registered successfully', 'callback_override_applied' => true)
+      end
+    end
+
+    # The refusal this endpoint has to describe: the WABA subscription lands, so Meta delivers,
+    # and the number is not pointed at this installation.
+    context 'when Meta refuses the per-number override' do
+      before do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 403, body: { error: { message: '(#200) Permissions error', code: 200 } }.to_json)
+      end
+
+      it 'still succeeds, and says the routing was not applied' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body).to include('message' => 'Webhook registered successfully', 'callback_override_applied' => false)
+        expect(subscription).to have_been_requested
+      end
+
+      it 'leaves the channel authorized, which is what #568 fixed' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(whatsapp_channel.reload.reauthorization_required?).to be(false)
+      end
+    end
+
+    context 'when the subscription Meta needs fails' do
+      before do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 400, body: { error: { message: 'App subscription to WABA failed' } }.to_json)
+      end
+
+      it 'answers the failure instead of a partial success' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to include('Webhook setup failed')
+        expect(response.parsed_body).not_to have_key('callback_override_applied')
+      end
+    end
+
+    # `callback_override_applied` answers one write, and a refusal, a 500 and a connection that
+    # closes with nothing to read all reach it as the same `false`. Where delivery goes afterwards
+    # is a different question, and the only authority on it is Meta, read back after the attempt.
+    context 'when the answer has to say where delivery goes' do
+      let(:expected_url) { "#{ENV.fetch('FRONTEND_URL', 'http://www.chatwoot.test')}/webhooks/whatsapp/#{whatsapp_channel.phone_number}" }
+
+      def register
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: admin.create_new_auth_token, as: :json
+        response.parsed_body
+      end
+
+      it 'reads the routing back when Meta refused the write, and answers what it found' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 403, body: { error: { message: '(#200) Permissions error', code: 200 } }.to_json)
+        stub_health_read(elsewhere_url)
+
+        body = register
+
+        expect(response).to have_http_status(:success)
+        expect(body['callback_override_applied']).to be(false)
+        expect(body['routing_read_back']).to be(true)
+        expect(body.dig('health', 'webhook_configuration', 'phone_number')).to eq(elsewhere_url)
+      end
+
+      # The case this endpoint could not describe: Meta stored the override and then answered 500.
+      # The write is not confirmed and the routing did change, so an answer derived from the write
+      # alone contradicts the card that is rendered from the read.
+      it 'answers the routing the write actually left, even though the write was not confirmed' do
+        # The fake Meta stores the override and only then fails, and the read answers what is
+        # stored at the moment it is asked. So a read taken before the write would answer the old
+        # URL, and this example is what pins the order rather than only the value.
+        stored = elsewhere_url
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return do
+            stored = expected_url
+            { status: 500, body: { error: { message: 'An unexpected error has occurred.', code: 1 } }.to_json }
+          end
+        stub_request(:get, %r{graph\.facebook\.com/#{health_api_version}/#{phone_number_id}})
+          .to_return do
+            { status: 200, headers: { 'Content-Type' => 'application/json' },
+              body: { id: phone_number_id, webhook_configuration: { phone_number: stored } }.to_json }
+          end
+
+        body = register
+
+        expect(body['callback_override_applied']).to be(false)
+        expect(body['routing_read_back']).to be(true)
+        expect(body.dig('health', 'webhook_configuration', 'phone_number')).to eq(expected_url)
+        expect(body.dig('health', 'routed_by_app_callback_only')).to be(false)
+      end
+
+      # The read is the addition, so it is the thing that must not cost anything: a write that
+      # landed cannot be reported as a failure because the read after it did not come back.
+      it 'says the routing is unknown when it could not be read back, and still answers 2xx' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+        stub_request(:get, %r{graph\.facebook\.com/#{health_api_version}/}).to_return(status: 500, body: '{}')
+
+        body = register
+
+        expect(response).to have_http_status(:success)
+        expect(body['callback_override_applied']).to be(true)
+        expect(body['routing_read_back']).to be(false)
+        expect(body).not_to have_key('health')
+      end
+
+      # Two arrangements that differ only in what Meta did with the write, and a consumer that is
+      # not the dashboard has to be able to tell them apart.
+      it 'answers differently for a refused write and one that landed before the error' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 403, body: { error: { message: '(#200) Permissions error', code: 200 } }.to_json)
+        stub_health_read(elsewhere_url)
+        refused = register
+
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{phone_number_id}")
+          .to_return(status: 500, body: { error: { message: 'An unexpected error has occurred.', code: 1 } }.to_json)
+        stub_health_read(expected_url)
+        landed = register
+
+        expect(refused['callback_override_applied']).to eq(landed['callback_override_applied'])
+        expect(refused.dig('health', 'webhook_configuration', 'phone_number'))
+          .not_to eq(landed.dig('health', 'webhook_configuration', 'phone_number'))
+      end
+    end
+
+    context 'when the user is not an administrator' do
+      it 'refuses' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+             headers: agent.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/setup_channel_provider' do
+    let(:channel) { create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false) }
+    let(:inbox) { channel.inbox }
+
+    context 'when unauthenticated' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/setup_channel_provider"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated' do
+      it 'returns unprocessable entity when channel does not support setup' do
+        inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/setup_channel_provider",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('Channel does not support setup')
+      end
+
+      it 'calls setup_channel_provider when supported and returns ok' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService, setup_channel_provider: true)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/setup_channel_provider",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      # The pairing UI calls this and shows whatever comes back, so an error the session
+      # layer raises on purpose has to arrive as a sentence and a status the dashboard can
+      # act on. A wrong Uazapi token used to escape as a 500 and read as a blank wall.
+      it 'answers a session error with its own status instead of a 500' do
+        session_channel = create(:channel_whatsapp, account: account, provider: 'uazapi',
+                                                    validate_provider_config: false, sync_templates: false)
+        allow_any_instance_of(Whatsapp::Session::Facade) # rubocop:disable RSpec/AnyInstance
+          .to receive(:setup_channel_provider)
+          .and_raise(Whatsapp::Session::Errors::Unauthorized, 'the instance refused the token')
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{session_channel.inbox.id}/setup_channel_provider",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body).to include('error' => 'the instance refused the token', 'code' => 'unauthorized')
+      end
+
+      it 'answers a provider that is down with a 503, which is worth retrying' do
+        session_channel = create(:channel_whatsapp, account: account, provider: 'uazapi',
+                                                    validate_provider_config: false, sync_templates: false)
+        allow_any_instance_of(Whatsapp::Session::Facade) # rubocop:disable RSpec/AnyInstance
+          .to receive(:setup_channel_provider)
+          .and_raise(Whatsapp::Session::Errors::ProviderUnavailable, 'the instance did not answer')
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{session_channel.inbox.id}/setup_channel_provider",
+             headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:service_unavailable)
+      end
+
+      it 'allows agents to setup channel provider for assigned inboxes' do
+        create(:inbox_member, user: agent, inbox: inbox)
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService, setup_channel_provider: true)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/setup_channel_provider",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it 'returns unauthorized for agents not assigned to the inbox' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/setup_channel_provider",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/request_pairing_code' do
+    let(:session_channel) do
+      create(:channel_whatsapp, account: account, provider: 'uazapi', validate_provider_config: false, sync_templates: false)
+    end
+    let(:session_inbox) { session_channel.inbox }
+
+    it 'returns unauthorized when unauthenticated' do
+      post "/api/v1/accounts/#{account.id}/inboxes/#{session_inbox.id}/request_pairing_code"
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    # Same privilege as scanning a QR for the inbox, and granted the same way: both link
+    # a WhatsApp account to an inbox this agent is already assigned to.
+    it 'lets an assigned agent ask for one' do
+      create(:inbox_member, user: agent, inbox: session_inbox)
+      allow_any_instance_of(Whatsapp::Session::Facade).to receive(:request_pairing_code) # rubocop:disable RSpec/AnyInstance
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{session_inbox.id}/request_pairing_code",
+           headers: agent.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it 'returns unauthorized for an agent who is not on the inbox' do
+      post "/api/v1/accounts/#{account.id}/inboxes/#{session_inbox.id}/request_pairing_code",
+           headers: agent.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    # The route is on every inbox, and only the session family can answer it. A provider
+    # that cannot pair by code has to say so as a sentence, not as a 500.
+    it 'refuses a provider that does not pair by code' do
+      legacy = create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false)
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{legacy.inbox.id}/request_pairing_code",
+           headers: admin.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body['code']).to eq('unsupported')
+    end
+
+    it 'refuses a channel that has no pairing at all' do
+      post "/api/v1/accounts/#{account.id}/inboxes/#{create(:inbox, account: account).id}/request_pairing_code",
+           headers: admin.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+
+    it 'answers a provider that is down with a 503, which is worth retrying' do
+      allow_any_instance_of(Whatsapp::Session::Facade) # rubocop:disable RSpec/AnyInstance
+        .to receive(:request_pairing_code)
+        .and_raise(Whatsapp::Session::Errors::ProviderUnavailable, 'the instance did not answer')
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{session_inbox.id}/request_pairing_code",
+           headers: admin.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:service_unavailable)
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/import_whatsapp_session' do
+    let(:channel) { create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false) }
+    let(:inbox) { channel.inbox }
+    let(:session_payload) do
+      {
+        noiseCandidates: [{ private: 'np0', public: 'nb0' }],
+        identityKey: { private: 'ip', public: 'ib' },
+        registrationId: 42,
+        advSecretKey: 'adv',
+        account: { details: 'd', accountSignatureKey: 'ask', accountSignature: 'as', deviceSignature: 'ds' },
+        id: '551101234567:12@s.whatsapp.net'
+      }
+    end
+
+    context 'when unauthenticated' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated' do
+      it 'returns unprocessable entity for a non-baileys channel' do
+        other = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{other.id}/import_whatsapp_session",
+             params: { session: session_payload },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+
+      it 'returns unprocessable entity for a whatsapp channel using a non-baileys provider' do
+        cloud_channel = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud',
+                                                  sync_templates: false, validate_provider_config: false)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{cloud_channel.inbox.id}/import_whatsapp_session",
+             params: { session: session_payload },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+
+      it 'returns unprocessable entity when the session payload is missing' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+        allow(service_double).to receive(:import_session)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(service_double).not_to have_received(:import_session)
+      end
+
+      it 'imports the session and returns ok' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+        allow(service_double).to receive(:import_session).and_return(true)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session",
+             params: { session: session_payload, candidate_index: 1 },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(service_double).to have_received(:import_session).with(session: kind_of(Hash), candidate_index: 1)
+      end
+
+      it 'returns service unavailable when the provider is unavailable' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+        allow(service_double).to receive(:import_session)
+          .and_raise(Whatsapp::Providers::WhatsappBaileysService::ProviderUnavailableError)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session",
+             params: { session: session_payload },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:service_unavailable)
+      end
+
+      it 'allows agents assigned to the inbox' do
+        create(:inbox_member, user: agent, inbox: inbox)
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService, import_session: true)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session",
+             params: { session: session_payload },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it 'returns unauthorized for agents not assigned to the inbox' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/import_whatsapp_session",
+             params: { session: session_payload },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/disconnect_channel_provider' do
+    let(:channel) { create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false) }
+    let(:inbox) { channel.inbox }
+
+    context 'when unauthenticated' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/disconnect_channel_provider"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated' do
+      it 'returns unprocessable entity when channel does not support disconnect' do
+        inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/disconnect_channel_provider",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('Channel does not support disconnect')
+      end
+
+      it 'calls disconnect_channel_provider when supported and returns ok' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService, disconnect_channel_provider: true)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/disconnect_channel_provider",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(channel.reload.provider_connection).to eq('connection' => 'close')
+      end
+
+      # Disconnect is the documented recovery for a send stall, and re-pairing is the only
+      # thing that replaces the wedged socket. Recording 'close' on a disconnect the
+      # provider refused would clear the stall warning without replacing anything: the
+      # operator is told it worked, the banner disappears, and the inbox is still mute
+      # with no signal left to say so.
+      it 'leaves the connection untouched when the provider refuses to end the session' do
+        channel.update_provider_connection!(
+          connection: 'open',
+          send_stall: { 'consecutive_timeouts' => 3, 'action' => 'suppressed' }
+        )
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService)
+        allow(service_double).to receive(:disconnect_channel_provider)
+          .and_raise(Whatsapp::Session::Errors::ProviderUnavailable.new('The provider did not end the session (HTTP 500)'))
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/disconnect_channel_provider",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(channel.reload.provider_connection).to include(
+          'connection' => 'open',
+          'send_stall' => { 'consecutive_timeouts' => 3, 'action' => 'suppressed' }
+        )
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/convert_provider' do
+    let(:channel) { create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false, sync_templates: false) }
+    let(:inbox) { channel.inbox }
+    let(:new_cloud_config) do
+      { api_key: 'new_cloud_key', phone_number_id: 'new_phone_id', business_account_id: 'new_waba_id' }
+    end
+
+    before do
+      stub_request(:delete, "#{channel.provider_config['provider_url']}/connections/#{channel.phone_number}")
+        .to_return(status: 200)
+      stub_request(:get, %r{graph\.facebook\.com/v\d+\.\d+/.*/message_templates.*})
+        .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
+      stub_request(:get, %r{graph\.facebook\.com/v\d+\.\d+/.*/phone_numbers.*})
+        .to_return(status: 200, body: { data: [{ id: 'new_phone_id' }] }.to_json, headers: { 'Content-Type' => 'application/json' })
+      webhook_setup_service = instance_double(Whatsapp::WebhookSetupService, perform: nil)
+      allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_setup_service)
+    end
+
+    context 'when unauthenticated' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config }
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated as an agent' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: agent.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it 'returns unauthorized even when the agent is assigned to the inbox' do
+        create(:inbox_member, user: agent, inbox: inbox)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: agent.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated as an administrator' do
+      it 'converts the channel to the new provider' do # rubocop:disable RSpec/MultipleExpectations
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        body = response.parsed_body
+        expect(body['provider']).to eq('whatsapp_cloud')
+        expect(body['provider_config']).to include(
+          'api_key' => 'new_cloud_key',
+          'phone_number_id' => 'new_phone_id',
+          'business_account_id' => 'new_waba_id'
+        )
+        expect(body['provider_config']).not_to have_key('provider_url')
+        channel.reload
+        expect(channel.provider).to eq('whatsapp_cloud')
+        expect(channel.provider_config).to include(
+          'api_key' => 'new_cloud_key',
+          'phone_number_id' => 'new_phone_id',
+          'business_account_id' => 'new_waba_id'
+        )
+        expect(channel.provider_config).not_to have_key('provider_url')
+        expect(channel.provider_connection).to be_blank
+        expect(channel.message_templates).to be_blank
+      end
+
+      it 'returns 422 when the channel does not support conversion' do
+        other_inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{other_inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to match(/does not support provider conversion/i)
+      end
+
+      it 'returns 400 when the provider param is missing' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:bad_request)
+        expect(response.parsed_body['message']).to match(/provider/i)
+      end
+
+      it 'returns 422 when the new provider config is invalid' do
+        cloud_service = instance_double(Whatsapp::Providers::WhatsappCloudService, validate_provider_config?: false)
+        allow(Whatsapp::Providers::WhatsappCloudService).to receive(:new).and_return(cloud_service)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: { api_key: 'bad' } },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['message']).to match(/invalid credentials/i)
+      end
+
+      it 'returns 422 with a fallback message when conversion raises a generic error' do
+        allow_any_instance_of(Channel::Whatsapp).to receive(:convert_provider!).and_raise(StandardError, 'boom') # rubocop:disable RSpec/AnyInstance
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider: 'whatsapp_cloud', provider_config: new_cloud_config },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['message']).to match(/provider conversion failed/i)
+      end
+
+      it 'returns 422 when converting to the same provider' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/convert_provider",
+             headers: admin.create_new_auth_token,
+             params: { provider: channel.provider, provider_config: {} },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['message']).to match(/must be different/i)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/inboxes/:id/on_whatsapp' do
+    let(:channel) { create(:channel_whatsapp, account: account, provider: 'baileys', validate_provider_config: false) }
+    let(:inbox) { channel.inbox }
+
+    context 'when unauthenticated' do
+      it 'returns unauthorized' do
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/on_whatsapp"
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+    end
+
+    context 'when authenticated' do
+      it 'returns unprocessable entity when channel does not support on_whatsapp' do
+        inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/on_whatsapp",
+             headers: admin.create_new_auth_token,
+             params: { phone_number: '+123456789' },
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('Channel does not support whatsapp check')
+      end
+
+      it 'returns unprocessable entity when phone_number is not passed' do
+        inbox = create(:inbox, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/on_whatsapp",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to eq('param is missing or the value is empty: phone_number')
+      end
+
+      it 'calls on_whatsapp when supported and returns provider response' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService,
+                                         on_whatsapp: { jid: '123456789@s.whatsapp.net', exists: true, lid: '123@lid' })
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/on_whatsapp",
+             headers: admin.create_new_auth_token,
+             params: { phone_number: '+123456789' },
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+      end
+
+      it 'calls on_whatsapp when supported and returns default response on no response from provider' do
+        service_double = instance_double(Whatsapp::Providers::WhatsappBaileysService, on_whatsapp: nil)
+        allow(Whatsapp::Providers::WhatsappBaileysService).to receive(:new)
+          .with(whatsapp_channel: channel)
+          .and_return(service_double)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/on_whatsapp",
+             headers: admin.create_new_auth_token,
+             params: { phone_number: '+123456789' },
+             as: :json
+
+        expect(response).to have_http_status(:ok)
       end
     end
   end

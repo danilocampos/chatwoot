@@ -18,6 +18,15 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  mode: {
+    type: String,
+    default: 'create',
+    validator: value => ['create', 'convert'].includes(value),
+  },
+  inbox: {
+    type: Object,
+    default: null,
+  },
   isDisabled: {
     type: Boolean,
     default: false,
@@ -31,6 +40,10 @@ const props = defineProps({
     default: '',
   },
 });
+
+const emit = defineEmits(['leaving']);
+
+const isConvertMode = computed(() => props.mode === 'convert');
 
 const store = useStore();
 const router = useRouter();
@@ -68,6 +81,23 @@ const enableCallingForInbox = async inboxId => {
 };
 
 const handleSignupSuccess = async inboxData => {
+  // Tell the parent we are about to navigate away. The router.replace below
+  // is reactive against the route — without an explicit signal, the parent
+  // Whatsapp.vue would re-render against the new route's query params while
+  // still mounted, briefly flashing the provider picker between the toast
+  // and the unmount.
+  emit('leaving');
+
+  if (isConvertMode.value) {
+    isProcessing.value = false;
+    useAlert(t('INBOX_MGMT.CONVERT.API.SUCCESS_MESSAGE'));
+    router.replace({
+      name: 'settings_inbox_show',
+      params: { inboxId: props.inbox.id },
+    });
+    return;
+  }
+
   if (inboxData && inboxData.id) {
     if (props.enableCallingOnComplete) {
       processingMessage.value = t(
@@ -96,6 +126,11 @@ const handleSignupSuccess = async inboxData => {
 const launchEmbeddedSignup = async () => {
   if (props.isDisabled) return;
 
+  if (isConvertMode.value && !props.inbox?.id) {
+    useAlert(t('INBOX_MGMT.ADD.WHATSAPP.API.ERROR_MESSAGE'));
+    return;
+  }
+
   let credentials;
   try {
     credentials = await runEmbeddedSignup();
@@ -118,10 +153,14 @@ const launchEmbeddedSignup = async () => {
     'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.PROCESSING'
   );
   try {
-    const inboxData = await store.dispatch(
-      'inboxes/createWhatsAppEmbeddedSignup',
-      credentials
-    );
+    const action = isConvertMode.value
+      ? 'inboxes/convertWhatsAppEmbeddedSignup'
+      : 'inboxes/createWhatsAppEmbeddedSignup';
+    const dispatchParams = isConvertMode.value
+      ? { ...credentials, inboxId: props.inbox.id }
+      : credentials;
+
+    const inboxData = await store.dispatch(action, dispatchParams);
     await handleSignupSuccess(inboxData);
   } catch (error) {
     isProcessing.value = false;

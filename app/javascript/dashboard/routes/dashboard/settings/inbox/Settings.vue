@@ -37,6 +37,7 @@ import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue'
 import LockToSingleConversationPreview from './components/LockToSingleConversationPreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import SpinnerLoader from 'dashboard/components-next/spinner/Spinner.vue';
+import ConvertInboxModal from 'dashboard/components/widgets/modal/ConvertInboxModal.vue';
 import {
   getInboxIconByType,
   getInboxIdentifier,
@@ -75,6 +76,7 @@ export default {
     GoogleReauthorize,
     NextButton,
     SpinnerLoader,
+    ConvertInboxModal,
     InstagramReauthorize,
     TiktokReauthorize,
     WhatsappReauthorize,
@@ -125,6 +127,7 @@ export default {
       widgetBubblePosition: 'right',
       widgetBubbleType: 'standard',
       widgetBubbleLauncherTitle: '',
+      showConvertGate: false,
     };
   },
   computed: {
@@ -182,7 +185,25 @@ export default {
       if (this.isATwilioWhatsAppChannel) {
         return this.$t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO');
       }
+      if (this.isAWhatsAppBaileysChannel) {
+        return this.$t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.BAILEYS');
+      }
+      if (this.isAWhatsAppZapiChannel) {
+        return this.$t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.ZAPI');
+      }
+      if (this.isASessionWhatsAppChannel) {
+        return this.$t(
+          `INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.${this.whatsAppAPIProvider.toUpperCase()}`
+        );
+      }
       return '';
+    },
+    isConvertibleWhatsAppChannel() {
+      return (
+        this.isAWhatsAppCloudChannel ||
+        this.isASessionWhatsAppChannel ||
+        this.is360DialogWhatsAppChannel
+      );
     },
     tabs() {
       let visibleToAllChannelTabs = [
@@ -224,7 +245,8 @@ export default {
         this.isAPIInbox ||
         (this.isAnEmailChannel && !this.inbox.provider) ||
         this.shouldShowWhatsAppConfiguration ||
-        this.isAWebWidgetInbox
+        this.isAWebWidgetInbox ||
+        this.isASessionWhatsAppChannel
       ) {
         visibleToAllChannelTabs = [
           ...visibleToAllChannelTabs,
@@ -597,9 +619,15 @@ export default {
 
       try {
         this.isLoadingHealth = true;
-        this.healthError = null;
+        // Cleared with the answer, not before asking. Until #593 there was nothing to press in the
+        // error state, so the gap between the two never had a viewer; now the operator presses
+        // Register, the re-read starts, and clearing the error here would drop the screen into the
+        // "nothing is known" state for as long as the read takes, which with a quiet Meta is the
+        // whole 10s ceiling: the error card, the provider message and the button all disappear and
+        // come back.
         const response = await InboxHealthAPI.getHealthStatus(this.inbox.id);
         this.healthData = response.data;
+        this.healthError = null;
       } catch (error) {
         const apiError = error.response?.data?.error;
         this.healthError =
@@ -626,9 +654,31 @@ export default {
 
       try {
         this.isRegisteringWebhook = true;
-        await InboxHealthAPI.registerWebhook(this.inbox.id);
-        useAlert(this.$t('INBOX_MGMT.ACCOUNT_HEALTH.WEBHOOK.REGISTER_SUCCESS'));
-        await this.fetchHealthData();
+        const { data } = await InboxHealthAPI.registerWebhook(this.inbox.id);
+        // Meta refuses the per-number override for a whole class of accounts, and that refusal no
+        // longer takes the channel down, so a plain success here would be the only thing the
+        // operator sees about a write that did not land. The flag is about that write and nothing
+        // else: it reads `false` for a refusal, for a 500 and for a connection that closed, so the
+        // sentence sends the reader to the card instead of claiming where delivery goes.
+        useAlert(
+          data?.callback_override_applied === false
+            ? this.$t(
+                'INBOX_MGMT.ACCOUNT_HEALTH.WEBHOOK.REGISTER_SUCCESS_WITHOUT_ROUTING'
+              )
+            : this.$t('INBOX_MGMT.ACCOUNT_HEALTH.WEBHOOK.REGISTER_SUCCESS')
+        );
+        // The answer already carries the routing Meta reported after the write, so the card comes
+        // from it instead of a second round trip. When that read did not come back the field says
+        // so, and then the card is fetched rather than left showing what it had before the press.
+        if (data?.routing_read_back) {
+          // The error has to go with it. Until #593 the screen could not be repaired from the error
+          // state at all, so nothing ever reached this line holding a stale failure; now it can,
+          // and leaving `healthError` set would keep the error card over a reading that came back.
+          this.healthData = data.health;
+          this.healthError = null;
+        } else {
+          await this.fetchHealthData();
+        }
       } catch (error) {
         // Same as the health fetch: the provider's own message is the actionable part.
         useAlert(
@@ -760,6 +810,22 @@ export default {
     },
     toggleLockToSingleConversation(value) {
       this.locktoSingleConversation = value;
+    },
+    openConvertGate() {
+      this.showConvertGate = true;
+    },
+    closeConvertGate() {
+      this.showConvertGate = false;
+    },
+    goToConvert() {
+      this.showConvertGate = false;
+      this.$router.push({
+        name: 'settings_inbox_convert',
+        params: {
+          accountId: this.$route.params.accountId,
+          inboxId: this.inbox.id,
+        },
+      });
     },
   },
   validations: {
@@ -978,12 +1044,21 @@ export default {
               v-if="isAWhatsAppChannel"
               :label="$t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.LABEL')"
             >
-              <input
-                v-model="whatsAppAPIProviderName"
-                type="text"
-                disabled
-                class="!mb-0"
-              />
+              <div class="flex items-center gap-2 w-full">
+                <input
+                  :value="whatsAppAPIProviderName"
+                  type="text"
+                  disabled
+                  class="!mb-0 flex-1"
+                />
+                <NextButton
+                  v-if="isConvertibleWhatsAppChannel"
+                  slate
+                  sm
+                  :label="$t('INBOX_MGMT.CONVERT.BUTTON')"
+                  @click="openConvertGate"
+                />
+              </div>
             </SettingsFieldSection>
 
             <SettingsFieldSection
@@ -1466,5 +1541,13 @@ export default {
         />
       </div>
     </section>
+    <ConvertInboxModal
+      v-if="showConvertGate"
+      v-model:show="showConvertGate"
+      :inbox-name="inbox.name"
+      :current-provider="whatsAppAPIProviderName"
+      @on-confirm="goToConvert"
+      @on-close="closeConvertGate"
+    />
   </div>
 </template>

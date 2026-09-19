@@ -47,6 +47,61 @@ describe('ActionCableConnector - Copilot Tests', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
   });
+
+  describe('contact.group_synced event handler', () => {
+    it('should register the contact.group_synced event handler', () => {
+      expect(Object.keys(actionCable.events)).toContain('contact.group_synced');
+      expect(actionCable.events['contact.group_synced']).toBe(
+        actionCable.onContactGroupSynced
+      );
+    });
+
+    it('should dispatch groupMembers/setGroupMembers with contact id and members from payload', () => {
+      const groupSyncedData = {
+        id: 42,
+        name: 'Test Group',
+        account_id: 1,
+        group_members: [
+          {
+            id: 1,
+            role: 'admin',
+            is_active: true,
+            contact: {
+              id: 10,
+              name: 'Alice',
+              phone_number: '+1234567890',
+              thumbnail: null,
+            },
+          },
+          {
+            id: 2,
+            role: 'member',
+            is_active: true,
+            contact: {
+              id: 11,
+              name: 'Bob',
+              phone_number: '+0987654321',
+              thumbnail: null,
+            },
+          },
+        ],
+      };
+
+      actionCable.onReceived({
+        event: 'contact.group_synced',
+        data: groupSyncedData,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'groupMembers/setGroupMembers',
+        {
+          contactId: 42,
+          members: groupSyncedData.group_members,
+        }
+      );
+    });
+  });
+
   describe('copilot event handlers', () => {
     it('should register the copilot.message.created event handler', () => {
       expect(Object.keys(actionCable.events)).toContain(
@@ -72,6 +127,33 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(mockDispatch).toHaveBeenCalledWith(
         'copilotMessages/upsert',
         copilotData
+      );
+    });
+  });
+
+  describe('inbox.provider_connection_updated event handler', () => {
+    it('should register the inbox.provider_connection_updated event handler', () => {
+      expect(Object.keys(actionCable.events)).toContain(
+        'inbox.provider_connection_updated'
+      );
+      expect(actionCable.events['inbox.provider_connection_updated']).toBe(
+        actionCable.onInboxProviderConnectionUpdated
+      );
+    });
+
+    it('should dispatch inboxes/updateProviderConnection with the inbox id and connection', () => {
+      actionCable.onReceived({
+        event: 'inbox.provider_connection_updated',
+        data: {
+          inbox_id: 7,
+          provider_connection: { connection: 'open' },
+          account_id: 1,
+        },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'inboxes/updateProviderConnection',
+        { id: 7, providerConnection: { connection: 'open' } }
       );
     });
   });
@@ -375,6 +457,151 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
       vi.advanceTimersByTime(4000);
       expect(mockDispatch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('conversation pin event handlers', () => {
+    it('dispatches conversationPins/add on conversation.pinned', () => {
+      actionCable.onReceived({
+        event: 'conversation.pinned',
+        data: { account_id: 1, conversation_id: 7, pinned_at: 100 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith('conversationPins/add', {
+        account_id: 1,
+        conversation_id: 7,
+        pinned_at: 100,
+      });
+    });
+
+    it('dispatches conversationPins/remove on conversation.unpinned', () => {
+      actionCable.onReceived({
+        event: 'conversation.unpinned',
+        data: { account_id: 1, conversation_id: 7, pinned_at: 100 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith('conversationPins/remove', {
+        account_id: 1,
+        conversation_id: 7,
+        pinned_at: 100,
+      });
+    });
+
+    it('ignores events from another account', () => {
+      actionCable.onReceived({
+        event: 'conversation.pinned',
+        data: { account_id: 2, conversation_id: 7, pinned_at: 100 },
+      });
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it('refetches the pins when the account cache is invalidated', () => {
+      actionCable.onReceived({
+        event: 'account.cache_invalidated',
+        data: { account_id: 1, cache_keys: {} },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith('conversationPins/fetch');
+    });
+  });
+
+  describe('pin refresh on assignment', () => {
+    const assigneeChanged = (assignee, assigneeType = 'User') => ({
+      event: 'assignee.changed',
+      data: {
+        account_id: 1,
+        id: 7,
+        meta: { assignee, assignee_type: assigneeType },
+      },
+    });
+
+    const userWith = permissions => ({
+      id: 11,
+      accounts: [{ id: 1, permissions }],
+    });
+
+    beforeEach(() => {
+      store.$store.getters.getCurrentUser = userWith([
+        'conversation_participating_manage',
+      ]);
+    });
+
+    it('refetches the pins when the conversation is assigned to the current user', () => {
+      actionCable.onReceived(assigneeChanged({ id: 11 }));
+
+      expect(mockDispatch).toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('does not refetch when the conversation is assigned to someone else', () => {
+      actionCable.onReceived(assigneeChanged({ id: 12 }));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('does not refetch when an agent bot shares the current user id', () => {
+      actionCable.onReceived(assigneeChanged({ id: 11 }, 'AgentBot'));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('does not refetch for a plain agent, whose access never followed the assignee', () => {
+      store.$store.getters.getCurrentUser = { id: 11, accounts: [{ id: 1 }] };
+
+      actionCable.onReceived(assigneeChanged({ id: 11 }));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('does not refetch for a role that sees every conversation in its inboxes', () => {
+      store.$store.getters.getCurrentUser = userWith(['conversation_manage']);
+
+      actionCable.onReceived(assigneeChanged({ id: 11 }));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    // The role editor adds both scoped permissions whenever manage-all is picked, so this is what a
+    // manage-all role looks like in practice, and the backend reads manage-all with precedence.
+    it('does not refetch for a manage-all role carrying the scoped permissions too', () => {
+      store.$store.getters.getCurrentUser = userWith([
+        'conversation_manage',
+        'conversation_unassigned_manage',
+        'conversation_participating_manage',
+      ]);
+
+      actionCable.onReceived(assigneeChanged({ id: 11 }));
+      actionCable.onReceived(assigneeChanged(null, null));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    // `conversations.unassigned` excludes a conversation a bot holds, so a bot taking over takes it
+    // away from an unassigned-only role instead of handing it over.
+    it('does not refetch when a bot takes over, which grants no access', () => {
+      store.$store.getters.getCurrentUser = userWith([
+        'conversation_unassigned_manage',
+      ]);
+
+      actionCable.onReceived(assigneeChanged({ id: 99 }, 'AgentBot'));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('refetches when the conversation is unassigned and the role sees unassigned ones', () => {
+      store.$store.getters.getCurrentUser = userWith([
+        'conversation_unassigned_manage',
+      ]);
+
+      actionCable.onReceived(assigneeChanged(null, null));
+
+      expect(mockDispatch).toHaveBeenCalledWith('conversationPins/fetch');
+    });
+
+    it('does not refetch when the conversation is unassigned and the role only sees its own', () => {
+      actionCable.onReceived(assigneeChanged(null, null));
+
+      expect(mockDispatch).not.toHaveBeenCalledWith('conversationPins/fetch');
     });
   });
 });

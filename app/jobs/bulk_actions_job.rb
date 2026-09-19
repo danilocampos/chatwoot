@@ -27,7 +27,11 @@ class BulkActionsJob < ApplicationJob
     records.each do |conversation|
       bulk_add_labels(conversation)
       bulk_snoozed_until(conversation)
-      conversation.update(params) if params
+      conversation.update!(params) if params
+    rescue CustomExceptions::Conversation::AlreadyAssigned
+      # The conversation belongs to another agent. Skip it instead of taking the
+      # rest of the batch down with it: there is no response to raise into here.
+      next
     end
   end
 
@@ -55,7 +59,7 @@ class BulkActionsJob < ApplicationJob
     return unless @params[:labels] && @params[:labels][:remove]
 
     labels = conversation.label_list - @params[:labels][:remove]
-    conversation.update(label_list: labels)
+    conversation.update!(label_list: labels)
   end
 
   def records_to_updated(ids)

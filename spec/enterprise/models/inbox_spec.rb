@@ -28,7 +28,7 @@ RSpec.describe Inbox do
 
     it 'returns member ids with assignment capacity with inbox max_assignment_limit is configured' do
       # agent 1 has 1 conversations, agent 2 has 2 conversations, agent 3 has 3 conversations and agent 4 with none
-      inbox.update(auto_assignment_config: { max_assignment_limit: 2 })
+      inbox.update!(auto_assignment_config: { max_assignment_limit: 2 })
       expect(inbox.member_ids_with_assignment_capacity).to contain_exactly(inbox_member_1.user_id, inbox_member_4.user_id)
     end
 
@@ -81,7 +81,7 @@ RSpec.describe Inbox do
       end
 
       it 'skips V1 max_assignment_limit when V2 is enabled' do
-        v2_inbox.update(auto_assignment_config: { max_assignment_limit: 100 })
+        v2_inbox.update!(auto_assignment_config: { max_assignment_limit: 100 })
 
         create(:conversation, inbox: v2_inbox, account: account, assignee: agent1, status: :open)
 
@@ -166,7 +166,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
+        inbox.update!(name: 'Updated Inbox')
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
       end
     end
@@ -175,7 +175,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_color = inbox.channel.widget_color
         new_color = '#ff0000'
-        inbox.channel.update(widget_color: new_color)
+        inbox.channel.update!(widget_color: new_color)
 
         # check if channel update creates an audit log against inbox
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
@@ -198,7 +198,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
+        inbox.update!(name: 'Updated Inbox')
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
       end
     end
@@ -207,7 +207,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_webhook = inbox.channel.webhook_url
         new_webhook = 'https://example2.com'
-        inbox.channel.update(webhook_url: new_webhook)
+        inbox.channel.update!(webhook_url: new_webhook)
 
         # check if channel update creates an audit log against inbox
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
@@ -242,7 +242,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
+        inbox.update!(name: 'Updated Inbox')
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
       end
     end
@@ -251,7 +251,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_phone_number = inbox.channel.phone_number
         new_phone_number = '1234567890'
-        inbox.channel.update(phone_number: new_phone_number)
+        inbox.channel.update!(phone_number: new_phone_number)
 
         # check if channel update creates an audit log against inbox
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)

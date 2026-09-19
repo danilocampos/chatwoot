@@ -48,7 +48,7 @@ gem 'ssrf_filter', '~> 1.5'
 # authentication type to fetch and send mail over oauth2.0
 gem 'gmail_xoauth'
 # Lock net-smtp to 0.3.4 to avoid issues with gmail_xoauth2
-gem 'net-smtp',  '~> 0.3.4'
+gem 'net-smtp', '~> 0.3.4'
 # Prevent CSV injection
 gem 'csv-safe'
 
@@ -57,6 +57,7 @@ gem 'aws-sdk-s3', require: false
 gem 'azure-blob', require: false
 gem 'google-cloud-storage', '>= 1.48.0', require: false
 gem 'image_processing'
+gem 'streamio-ffmpeg', '~> 3.0'
 
 ##-- for actionmailbox --##
 gem 'aws-actionmailbox-ses', '~> 0'
@@ -211,6 +212,8 @@ gem 'opentelemetry-sdk'
 gem 'opentelemetry-exporter-otlp'
 
 gem 'shopify_api'
+
+gem 'resend', '~> 0.19.0'
 
 gem 'firecrawl-sdk', '~> 1.0', require: 'firecrawl'
 

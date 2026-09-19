@@ -60,7 +60,7 @@ class Whatsapp::TemplateProcessorService
     header_component = template['components']&.find { |component| component['type'] == 'HEADER' }
     return build_text_header_params(header_data, template) if header_component&.dig('format') == 'TEXT'
 
-    build_media_header_params(header_data)
+    build_media_header_params(header_data, template)
   end
 
   def build_text_header_params(header_data, template)
@@ -69,11 +69,42 @@ class Whatsapp::TemplateProcessorService
     end
   end
 
-  def build_media_header_params(header_data)
+  def build_media_header_params(header_data, template)
     return [] if header_data['media_url'].blank? || header_data['media_type'].blank?
 
-    media_param = parameter_builder.build_media_parameter(header_data['media_url'], header_data['media_type'], header_data['media_name'])
+    media_param = parameter_builder.build_media_parameter(
+      media_source(header_data['media_url'], template), header_data['media_type'], header_data['media_name']
+    )
     media_param ? [media_param] : []
+  end
+
+  # Agents send the template's own sample media most of the time, and that URL can only be delivered as
+  # an uploaded media id, see Whatsapp::TemplateSampleMediaService. A URL the agent supplied is theirs
+  # to host, so it goes out as a plain link.
+  def media_source(media_url, template)
+    handle = sample_media_handle(media_url, template)
+    return { link: media_url } if handle.blank?
+
+    { id: Whatsapp::TemplateSampleMediaService.new(channel: channel, url: handle).media_id }
+  end
+
+  # Returns the handle the template carries right now, which is not always the string that was stored.
+  # Meta re-signs the sample URL and the sync picks up the new signature every few hours, so a scheduled
+  # message or a campaign can carry a signature that has since rotated. The path identifies the file, so
+  # match on that and upload the current handle rather than the stale one.
+  def sample_media_handle(media_url, template)
+    return nil unless channel.provider == 'whatsapp_cloud'
+
+    header = Array(template['components']).find { |component| component['type'] == 'HEADER' }
+    Array(header&.dig('example', 'header_handle')).find { |handle| same_media?(handle, media_url) }
+  end
+
+  def same_media?(handle, media_url)
+    return true if handle == media_url
+
+    Addressable::URI.parse(handle).omit(:query, :fragment) == Addressable::URI.parse(media_url).omit(:query, :fragment)
+  rescue Addressable::URI::InvalidURIError
+    false
   end
 
   def process_body_components(processed_params, template)

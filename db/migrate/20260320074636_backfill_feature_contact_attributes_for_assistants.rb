@@ -8,7 +8,7 @@ class BackfillFeatureContactAttributesForAssistants < ActiveRecord::Migration[7.
       account.captain_assistants.each do |assistant|
         next if assistant.feature_contact_attributes.present?
 
-        assistant.update(feature_contact_attributes: true)
+        assistant.update!(feature_contact_attributes: true)
       end
     end
   end
@@ -20,7 +20,7 @@ class BackfillFeatureContactAttributesForAssistants < ActiveRecord::Migration[7.
       account.captain_assistants.each do |assistant|
         next if assistant.feature_contact_attributes.blank?
 
-        assistant.update(feature_contact_attributes: nil)
+        assistant.update!(feature_contact_attributes: nil)
       end
     end
   end

@@ -4,16 +4,25 @@ class Internal::CheckNewVersionsJob < ApplicationJob
   def perform
     return unless Rails.env.production?
 
-    @instance_info = ChatwootHub.sync_with_hub
-    update_version_info
+    latest_version = fetch_latest_github_release
+    ::Redis::Alfred.set(::Redis::Alfred::LATEST_CHATWOOT_VERSION, latest_version) if latest_version.present?
   end
 
   private
 
-  def update_version_info
-    return if @instance_info['version'].blank?
+  def fetch_latest_github_release
+    # `max_retries: 0` alongside the ceiling: `Net::HTTP` repeats an idempotent request
+    # once by default, so 5 seconds was 10 against a GitHub that accepts and stalls.
+    response = HTTParty.get('https://api.github.com/repos/danilocampos/chatwoot/releases/latest', timeout: 5, max_retries: 0)
+    unless response.success?
+      Rails.logger.error "Failed to fetch latest GitHub release: HTTP #{response.code} - #{response.body}"
+      return nil
+    end
 
-    ::Redis::Alfred.set(::Redis::Alfred::LATEST_CHATWOOT_VERSION, @instance_info['version'])
+    response['tag_name']&.sub(/^v/, '')
+  rescue StandardError => e
+    Rails.logger.error "Failed to fetch latest GitHub release: #{e.message}"
+    nil
   end
 end
 

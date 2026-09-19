@@ -9,8 +9,20 @@ class Integrations::Slack::ChannelBuilder
     channels
   end
 
-  def update(reference_id)
-    update_reference_id(reference_id)
+  def update_reference_id(reference_id)
+    channel = find_channel(reference_id)
+    return if channel.blank?
+
+    slack_client.conversations_join(channel: channel[:id]) if channel[:is_private] == false
+    # `channel_name` is the only settings key this owns. Replacing the column, which is what this
+    # did, erased every other key a hook had -- and `PATCH .../integrations/hooks/:id` permits
+    # `settings` as an open hash, so there is a supported way to put keys there.
+    @hook.merge_json_column!(
+      :settings,
+      merge: { channel_name: channel[:name] },
+      attributes: { reference_id: channel[:id], status: 'enabled' }
+    )
+    @hook.reload
   end
 
   private
@@ -57,14 +69,5 @@ class Integrations::Slack::ChannelBuilder
 
   def find_channel(reference_id)
     channels.find { |channel| channel['id'] == reference_id }
-  end
-
-  def update_reference_id(reference_id)
-    channel = find_channel(reference_id)
-    return if channel.blank?
-
-    slack_client.conversations_join(channel: channel[:id]) if channel[:is_private] == false
-    hook.update!(reference_id: channel[:id], settings: hook.settings.merge('channel_name' => channel[:name]), status: 'enabled')
-    hook
   end
 end

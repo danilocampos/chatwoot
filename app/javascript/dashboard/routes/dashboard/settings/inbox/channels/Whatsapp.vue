@@ -1,8 +1,5 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import WhatsappProvidersAPI from 'dashboard/api/whatsappProviders';
-import { providerAllowed } from 'dashboard/helper/whatsappProviders';
-import SessionWhatsapp from './SessionWhatsapp.vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
 import Twilio from './Twilio.vue';
@@ -12,30 +9,32 @@ import WhatsappManualSetup from './WhatsappManualSetup.vue';
 import WhatsappEmbeddedSignup from './WhatsappEmbeddedSignup.vue';
 import WhatsappAccessRequestDialog from '../components/WhatsappAccessRequestDialog.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
+import BaileysWhatsapp from './BaileysWhatsapp.vue';
+import ZapiWhatsapp from './ZapiWhatsapp.vue';
+import SessionWhatsapp from './session/SessionWhatsapp.vue';
 import Banner from 'dashboard/components-next/banner/Banner.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useWhatsappSessionProviders } from 'dashboard/composables/useWhatsappSessionProviders';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { META_RESTRICTION_STATUS_URL } from 'dashboard/constants/globals';
 
-const route = useRoute();
-const registry = ref([]);
-const loadingProviders = ref(true);
-const providerLoadFailed = ref(false);
-onMounted(async () => {
-  try {
-    const response = await WhatsappProvidersAPI.get();
-    registry.value = response.data;
-  } catch {
-    providerLoadFailed.value = true;
-  } finally {
-    loadingProviders.value = false;
-  }
+const props = defineProps({
+  mode: {
+    type: String,
+    default: 'create',
+    validator: value => ['create', 'convert'].includes(value),
+  },
+  inbox: {
+    type: Object,
+    default: null,
+  },
 });
-const sessionProvider = computed(() =>
-  registry.value.find(item => item.session && item.id === route.query.provider)
-);
+
+const isConvertMode = computed(() => props.mode === 'convert');
+
+const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
 const accessRequestDialogRef = ref(null);
@@ -45,6 +44,16 @@ const {
   isMetaInboxCreationDisabled,
 } = useAccount();
 
+// Latched by the child once it triggers the post-success router.replace.
+// Suppresses rendering during the navigation tail so the parent doesn't
+// briefly re-render against the new route's query params (which would clear
+// `route.query.provider` and flash the provider picker between the success
+// toast and the unmount).
+const isLeaving = ref(false);
+const handleEmbeddedSignupLeaving = () => {
+  isLeaving.value = true;
+};
+
 const PROVIDER_TYPES = {
   WHATSAPP: 'whatsapp',
   TWILIO: 'twilio',
@@ -52,8 +61,15 @@ const PROVIDER_TYPES = {
   WHATSAPP_EMBEDDED: 'whatsapp_embedded',
   WHATSAPP_MANUAL: 'whatsapp_manual',
   THREE_SIXTY_DIALOG: '360dialog',
+  BAILEYS: 'baileys',
+  ZAPI: 'zapi',
+  NATIVE: 'native',
+  UAZAPI: 'uazapi',
 };
 
+// Upstream's own gate for the access-request card: the app id alone says embedded signup
+// exists on this installation. The fork's check below is the stricter one, and decides
+// whether the flow can actually run.
 const hasWhatsappAppId = computed(() => {
   return (
     window.chatwootConfig?.whatsappAppId &&
@@ -61,11 +77,33 @@ const hasWhatsappAppId = computed(() => {
   );
 });
 
+const hasEmbeddedSignupConfig = computed(() => {
+  const { whatsappAppId, whatsappConfigurationId } =
+    window.chatwootConfig ?? {};
+  return (
+    whatsappAppId &&
+    whatsappAppId !== 'none' &&
+    whatsappConfigurationId &&
+    whatsappConfigurationId !== 'none'
+  );
+});
+
 const selectedProvider = computed(() => route.query.provider);
 
-const showProviderSelection = computed(() => !selectedProvider.value);
+const INBOX_PROVIDER_TO_KEY = {
+  whatsapp_cloud: PROVIDER_TYPES.WHATSAPP,
+  default: PROVIDER_TYPES.THREE_SIXTY_DIALOG,
+  baileys: PROVIDER_TYPES.BAILEYS,
+  zapi: PROVIDER_TYPES.ZAPI,
+  native: PROVIDER_TYPES.NATIVE,
+  uazapi: PROVIDER_TYPES.UAZAPI,
+};
 
-const showConfiguration = computed(() => Boolean(selectedProvider.value));
+const currentProviderKey = computed(() => {
+  if (!props.inbox?.provider) return null;
+  return INBOX_PROVIDER_TO_KEY[props.inbox.provider] || null;
+});
+
 const isWhatsappEmbeddedSignupDisabled = computed(
   () => isMetaInboxCreationDisabled.value
 );
@@ -79,7 +117,7 @@ const isWhatsappEmbeddedSignupFeatureEnabled = computed(
 const shouldShowWhatsappEmbeddedSignup = computed(() => {
   return (
     selectedProvider.value === PROVIDER_TYPES.WHATSAPP &&
-    hasWhatsappAppId.value &&
+    hasEmbeddedSignupConfig.value &&
     isWhatsappEmbeddedSignupFeatureEnabled.value
   );
 });
@@ -94,36 +132,120 @@ const shouldShowEmbeddedSignupAccessRequest = computed(() => {
   );
 });
 
-const availableProviders = computed(() =>
-  [
-    {
-      key: PROVIDER_TYPES.WHATSAPP,
-      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
-      description: isWhatsappEmbeddedSignupDisabled.value
-        ? t(
-            'INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_MANUAL_SETUP_DESC'
-          )
-        : t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
-      icon: 'i-woot-whatsapp',
-    },
-    {
-      key: PROVIDER_TYPES.TWILIO,
-      title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
-      description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
-      icon: 'i-woot-twilio',
-    },
-  ]
-    .filter(item => providerAllowed(registry.value, item.key))
-    .concat(
-      registry.value
-        .filter(item => item.session || item.id === 'default')
-        .map(item => ({
-          key: item.id === 'default' ? '360dialog' : item.id,
-          title: item.name,
-          description: '',
-          icon: 'i-woot-whatsapp',
-        }))
-    )
+const PROVIDER_CATALOG = computed(() => [
+  {
+    key: PROVIDER_TYPES.WHATSAPP,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD'),
+    description: isWhatsappEmbeddedSignupDisabled.value
+      ? t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_MANUAL_SETUP_DESC')
+      : t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.WHATSAPP_CLOUD_DESC'),
+    icon: 'i-woot-whatsapp',
+  },
+  {
+    key: PROVIDER_TYPES.TWILIO,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.TWILIO_DESC'),
+    icon: 'i-woot-twilio',
+  },
+  {
+    key: PROVIDER_TYPES.BAILEYS,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.BAILEYS'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.BAILEYS_DESC'),
+    icon: 'i-woot-baileys',
+  },
+  {
+    key: PROVIDER_TYPES.ZAPI,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.ZAPI'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.ZAPI_DESC'),
+    icon: 'i-woot-zapi',
+  },
+  {
+    key: PROVIDER_TYPES.NATIVE,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.NATIVE'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.NATIVE_DESC'),
+    icon: 'i-woot-whatsapp-native',
+  },
+  {
+    key: PROVIDER_TYPES.UAZAPI,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.UAZAPI'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.UAZAPI_DESC'),
+    icon: 'i-woot-uazapi',
+  },
+  {
+    key: PROVIDER_TYPES.THREE_SIXTY_DIALOG,
+    title: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.360_DIALOG'),
+    description: t('INBOX_MGMT.ADD.WHATSAPP.PROVIDERS.360_DIALOG_DESC'),
+    icon: 'i-woot-whatsapp',
+  },
+]);
+
+// The cloud family, which this dashboard has always known statically. 360Dialog is
+// intentionally hidden in create mode (URL-reachable only) but offered in convert mode
+// where it is a valid target.
+const CREATE_PICKER_KEYS = [PROVIDER_TYPES.WHATSAPP, PROVIDER_TYPES.TWILIO];
+const CONVERT_PICKER_KEYS = [
+  PROVIDER_TYPES.WHATSAPP,
+  PROVIDER_TYPES.THREE_SIXTY_DIALOG,
+];
+
+// Every session provider comes from the catalog instead, legacy included: eligibility is
+// per installation (a connector has to be deployed for `native`, and the deprecation
+// withdraws the legacy ones) and per account, and the server is what knows both. Offering
+// a choice it would then refuse is worse than not offering it, and withdrawing one
+// becomes a server-side change.
+const { creatableProviders, descriptorFor, fetchProviders } =
+  useWhatsappSessionProviders();
+onMounted(fetchProviders);
+
+const creatableSessionKeys = computed(() =>
+  creatableProviders.value.map(({ key }) => key)
+);
+const selectedDescriptor = computed(() =>
+  descriptorFor(selectedProvider.value)
+);
+
+// The catalog is what knows a provider is still in beta, so the badge follows the server
+// rather than a literal in the label: ending the beta is one field on the descriptor.
+// The cloud providers have no descriptor here and answer false, which is what they are.
+const isBetaProvider = key => Boolean(descriptorFor(key)?.beta);
+
+const availableProviders = computed(() => {
+  const allowed = [
+    ...(isConvertMode.value ? CONVERT_PICKER_KEYS : CREATE_PICKER_KEYS),
+    ...creatableSessionKeys.value,
+  ];
+  return PROVIDER_CATALOG.value
+    .filter(p => allowed.includes(p.key))
+    .filter(p => !isConvertMode.value || p.key !== currentProviderKey.value);
+});
+
+const currentProviderLabel = computed(() => {
+  if (!isConvertMode.value || !currentProviderKey.value) return '';
+  return (
+    PROVIDER_CATALOG.value.find(({ key }) => key === currentProviderKey.value)
+      ?.title || ''
+  );
+});
+
+const isValidSelectedProvider = computed(() => {
+  if (!selectedProvider.value) return false;
+  // In create mode, allow the embedded-signup manual fallback link and the
+  // legacy-URL path to 360Dialog even though neither is in the picker.
+  if (!isConvertMode.value) {
+    if (selectedProvider.value === PROVIDER_TYPES.WHATSAPP_MANUAL) return true;
+    if (selectedProvider.value === PROVIDER_TYPES.THREE_SIXTY_DIALOG)
+      return true;
+  }
+  return availableProviders.value.some(
+    ({ key }) => key === selectedProvider.value
+  );
+});
+
+const showProviderSelection = computed(
+  () => !isLeaving.value && !isValidSelectedProvider.value
+);
+const showConfiguration = computed(
+  () => !isLeaving.value && isValidSelectedProvider.value
 );
 
 const providerSelectionDescription = computed(() =>
@@ -171,26 +293,7 @@ const requestEmbeddedSignupAccess = () => {
 <template>
   <div class="col-span-6 w-full h-full min-h-0 overflow-y-auto p-6">
     <WhatsappAccessRequestDialog ref="accessRequestDialogRef" />
-    <p v-if="loadingProviders" role="status">
-      {{ $t('WHATSAPP_PROVIDERS.loading') }}
-    </p>
-    <p v-else-if="providerLoadFailed" role="alert">
-      {{ $t('WHATSAPP_PROVIDERS.load_failed') }}
-    </p>
-    <p
-      v-else-if="
-        selectedProvider && !providerAllowed(registry, selectedProvider)
-      "
-      role="alert"
-    >
-      {{ $t('WHATSAPP_PROVIDERS.unavailable') }}
-    </p>
-    <SessionWhatsapp
-      v-else-if="sessionProvider"
-      :key="sessionProvider.id"
-      :provider="sessionProvider"
-    />
-    <div v-else-if="isManualSetup">
+    <div v-if="isManualSetup">
       <div
         v-if="shouldShowEmbeddedSignupAccessRequest"
         class="w-full p-5 mb-6 border rounded-xl border-n-weak bg-n-surface-2 text-start"
@@ -254,26 +357,42 @@ const requestEmbeddedSignupAccess = () => {
           </span>
         </div>
       </Banner>
-      <WhatsappManualSetup />
+      <!-- The guided setup creates an inbox. Converting keeps the fork's form, which knows the inbox it is converting. -->
+      <CloudWhatsapp v-if="isConvertMode" :mode="mode" :inbox="inbox" />
+      <WhatsappManualSetup v-else />
     </div>
 
     <div v-else-if="showProviderSelection">
       <div class="mb-10 text-left">
         <h1 class="mb-2 text-lg font-medium text-n-slate-12">
-          {{ $t('INBOX_MGMT.ADD.WHATSAPP.SELECT_PROVIDER.TITLE') }}
+          {{
+            isConvertMode
+              ? $t('INBOX_MGMT.CONVERT.SELECT_PROVIDER_TITLE')
+              : $t('INBOX_MGMT.ADD.WHATSAPP.SELECT_PROVIDER.TITLE')
+          }}
         </h1>
         <p class="text-sm leading-relaxed text-n-slate-11">
-          {{ providerSelectionDescription }}
+          {{
+            isConvertMode
+              ? $t('INBOX_MGMT.CONVERT.SELECT_PROVIDER_DESCRIPTION', {
+                  inboxName: inbox?.name,
+                  currentProvider: currentProviderLabel,
+                })
+              : providerSelectionDescription
+          }}
         </p>
       </div>
 
-      <div class="flex flex-wrap gap-6 justify-start">
+      <div
+        class="grid max-w-3xl grid-cols-1 gap-6 xs:grid-cols-2 sm:grid-cols-3"
+      >
         <ChannelSelector
           v-for="provider in availableProviders"
           :key="provider.key"
           :title="provider.title"
           :description="provider.description"
           :icon="provider.icon"
+          :is-beta="isBetaProvider(provider.key)"
           @click="selectProvider(provider.key)"
         />
       </div>
@@ -281,11 +400,15 @@ const requestEmbeddedSignupAccess = () => {
 
     <div v-else-if="showConfiguration">
       <div class="px-6 py-5 rounded-2xl border border-n-weak">
+        <!-- Show embedded signup if app ID is configured -->
         <div v-if="shouldShowWhatsappEmbeddedSignup">
           <WhatsappEmbeddedSignup
+            :mode="mode"
+            :inbox="inbox"
             :is-disabled="isWhatsappEmbeddedSignupDisabled"
             :show-restriction-alert="isWhatsappEmbeddedSignupDisabled"
             :restriction-status-url="META_RESTRICTION_STATUS_URL"
+            @leaving="handleEmbeddedSignupLeaving"
           />
 
           <!-- Manual setup fallback option -->
@@ -319,8 +442,25 @@ const requestEmbeddedSignupAccess = () => {
         />
         <ThreeSixtyDialogWhatsapp
           v-else-if="selectedProvider === PROVIDER_TYPES.THREE_SIXTY_DIALOG"
+          :mode="mode"
+          :inbox="inbox"
         />
-        <CloudWhatsapp v-else />
+        <BaileysWhatsapp
+          v-else-if="selectedProvider === PROVIDER_TYPES.BAILEYS"
+          :mode="mode"
+          :inbox="inbox"
+        />
+        <ZapiWhatsapp
+          v-else-if="selectedProvider === PROVIDER_TYPES.ZAPI"
+          :mode="mode"
+          :inbox="inbox"
+        />
+        <SessionWhatsapp
+          v-else-if="selectedDescriptor && !selectedDescriptor.legacy"
+          :descriptor="selectedDescriptor"
+          :mode="mode"
+          :inbox="inbox"
+        />
       </div>
     </div>
   </div>

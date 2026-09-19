@@ -6,7 +6,9 @@
 #  archived              :boolean          default(FALSE)
 #  color                 :string
 #  config                :jsonb
+#  custom_body_html      :text
 #  custom_domain         :string
+#  custom_head_html      :text
 #  header_text           :text
 #  homepage_link         :string
 #  name                  :string           not null
@@ -43,6 +45,8 @@ class Portal < ApplicationRecord
   validates :name, presence: true
   validates :slug, presence: true, uniqueness: true
   validates :custom_domain, uniqueness: true, allow_nil: true
+  validates :custom_head_html, length: { maximum: 15_000 }
+  validates :custom_body_html, length: { maximum: 15_000 }
   validates :color, format: { with: /\A#(?:\h{3}|\h{6})\z/ }, allow_blank: true
   before_validation :normalize_config
   validate :validate_config
@@ -67,7 +71,7 @@ class Portal < ApplicationRecord
 
   # TODO: 'website_token' is an unused reserved key; remove with a migration that scrubs it from existing portals' config
   CONFIG_JSON_KEYS = %w[allowed_locales default_locale draft_locales website_token social_profiles layout
-                        locale_translations popular_content analytics].freeze
+                        locale_translations show_author popular_content analytics].freeze
 
   def analytics
     value = config_value('analytics')
@@ -82,6 +86,10 @@ class Portal < ApplicationRecord
   # Max number of recommended categories/articles shown per locale.
   POPULAR_CATEGORY_LIMIT = 3
   POPULAR_ARTICLE_LIMIT = 6
+
+  def show_author?
+    !ActiveModel::Type::Boolean.new.cast(config['show_author']).equal?(false)
+  end
 
   def file_base_data
     {

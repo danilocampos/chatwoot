@@ -1,7 +1,7 @@
 import types from '../../mutation-types';
 import getters, { getSelectedChatConversation } from './getters';
 import actions from './actions';
-import { findPendingMessageIndex } from './helpers';
+import { findPendingMessageIndex, isStaleConversation } from './helpers';
 import { MESSAGE_STATUS } from 'shared/constants/messages';
 import wootConstants from 'dashboard/constants/globals';
 import { BUS_EVENTS } from '../../../../shared/constants/busEvents';
@@ -14,6 +14,7 @@ const state = {
   listLoadingStatus: true,
   chatStatusFilter: wootConstants.STATUS_TYPE.OPEN,
   chatSortFilter: wootConstants.SORT_BY_TYPE.LATEST,
+  chatGroupTypeFilter: '',
   currentInbox: null,
   selectedChatId: null,
   appliedFilters: [],
@@ -252,13 +253,29 @@ export const mutations = {
 
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
     if (pendingMessageIndex !== -1) {
+      // MESSAGE_UPDATED cables can arrive out of order when the user toggles a
+      // reaction quickly: each Sidekiq job reads the message at run time, so a
+      // late-arriving cable for an older state would clobber the fresher one.
+      // Drop updates that are older than what we already have.
+      const existing = chat.messages[pendingMessageIndex];
+      const incomingTs = Date.parse(message.updated_at);
+      const existingTs = Date.parse(existing?.updated_at);
+      const hasIncomingTs = Number.isFinite(incomingTs);
+      const hasExistingTs = Number.isFinite(existingTs);
+      // If the incoming timestamp is unparseable, treat it as stale so a
+      // malformed cable can't clobber the local row.
+      if (hasExistingTs && (!hasIncomingTs || incomingTs < existingTs)) return;
       chat.messages[pendingMessageIndex] = message;
     } else {
       chat.messages.push(message);
       chat.timestamp = message.created_at;
       const { conversation: { unread_count: unreadCount = 0 } = {} } = message;
       chat.unread_count = unreadCount;
-      if (selectedChatId === conversationId) {
+      // Reactions render as chips on their parent bubble, not as standalone
+      // rows, so jumping the viewport to the bottom on every toggle would
+      // yank the user away from whatever older message they reacted to.
+      const isReaction = message.content_attributes?.is_reaction === true;
+      if (selectedChatId === conversationId && !isReaction) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
     }
@@ -277,6 +294,16 @@ export const mutations = {
     );
   },
 
+  // Drops copies the server no longer lists in the tab they were shown under. The counterpart to
+  // SET_ALL_CONVERSATION, which only ever adds or replaces: a conversation that leaves a tab stops
+  // being sent to it, so nothing else would ever take it off the list.
+  [types.REMOVE_CONVERSATIONS](_state, conversationIds) {
+    const idsToRemove = new Set(conversationIds);
+    _state.allConversations = _state.allConversations.filter(
+      c => !idsToRemove.has(c.id)
+    );
+  },
+
   [types.UPDATE_CONVERSATION](_state, conversation) {
     const { allConversations } = _state;
     const index = allConversations.findIndex(c => c.id === conversation.id);
@@ -285,13 +312,22 @@ export const mutations = {
       const selectedConversation = allConversations[index];
 
       // ignore out of order events
-      if (conversation.updated_at < selectedConversation.updated_at) {
-        return;
-      }
+      if (isStaleConversation(conversation, selectedConversation)) return;
 
-      const { messages, ...updates } = conversation;
+      const {
+        messages,
+        event_metadata: eventMetadata,
+        ...updates
+      } = conversation;
       allConversations[index] = { ...selectedConversation, ...updates };
-      if (_state.selectedChatId === conversation.id) {
+      // The reactions controller dispatches CONVERSATION_UPDATED solely to
+      // refresh the chat list preview after a toggle (add/replace/remove); the
+      // open conversation should stay put. The backend tags the broadcast with
+      // `event_metadata.source = 'reaction_toggle'` so we can skip scroll
+      // unconditionally — heuristics on `last_non_activity_message` miss the
+      // case where newer non-reaction messages exist after the reacted target.
+      const isReactionUpdate = eventMetadata?.source === 'reaction_toggle';
+      if (_state.selectedChatId === conversation.id && !isReactionUpdate) {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
     } else {
@@ -327,6 +363,10 @@ export const mutations = {
 
   [types.CHANGE_CHAT_SORT_FILTER](_state, data) {
     _state.chatSortFilter = data;
+  },
+
+  [types.CHANGE_CHAT_GROUP_TYPE_FILTER](_state, data) {
+    _state.chatGroupTypeFilter = data;
   },
 
   // Update assignee on action cable message

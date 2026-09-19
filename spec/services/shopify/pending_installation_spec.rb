@@ -35,7 +35,7 @@ RSpec.describe Shopify::PendingInstallation do
   end
 
   it 'creates an encrypted pending installation' do
-    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope)
+    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope) # rubocop:disable Rails/SaveBang
 
     expect(created_token).to match(described_class::TOKEN_FORMAT)
   ensure
@@ -60,7 +60,7 @@ RSpec.describe Shopify::PendingInstallation do
   end
 
   it 'invalidates tokens created before Shopify lifecycle cleanup' do
-    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope)
+    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope) # rubocop:disable Rails/SaveBang
 
     described_class.invalidate_shop!(shop: shop)
 
@@ -89,7 +89,7 @@ RSpec.describe Shopify::PendingInstallation do
 
   it 'allows a fresh installation after lifecycle cleanup' do
     described_class.invalidate_shop!(shop: shop)
-    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope)
+    created_token = described_class.create(access_token: access_token, shop: shop, scope: scope) # rubocop:disable Rails/SaveBang
     pending_installation = described_class.claim(token: created_token)
 
     expect(pending_installation.data['generation']).to eq(1)
@@ -207,7 +207,7 @@ RSpec.describe Shopify::PendingInstallation do
   end
 
   it 'normalizes the shop domain before storing it' do
-    created_token = described_class.create(access_token: access_token, shop: 'My-Store.MyShopify.Com', scope: scope)
+    created_token = described_class.create(access_token: access_token, shop: 'My-Store.MyShopify.Com', scope: scope) # rubocop:disable Rails/SaveBang
     pending_installation = described_class.claim(token: created_token)
 
     expect(pending_installation.data['shop']).to eq('my-store.myshopify.com')

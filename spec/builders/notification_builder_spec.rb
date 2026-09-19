@@ -75,7 +75,7 @@ describe NotificationBuilder do
     end
 
     it 'will not create a notification if conversation contact is blocked and notification type is not conversation_mention' do
-      primary_actor.contact.update(blocked: true)
+      primary_actor.contact.update!(blocked: true)
 
       expect do
         described_class.new(
@@ -88,7 +88,7 @@ describe NotificationBuilder do
     end
 
     it 'will create a notification if conversation contact is blocked and notification type is conversation_mention' do
-      primary_actor.contact.update(blocked: true)
+      primary_actor.contact.update!(blocked: true)
 
       expect do
         described_class.new(
@@ -158,6 +158,23 @@ describe NotificationBuilder do
             secondary_actor: message
           ).perform
         end.not_to(change { outsider.notifications.count })
+      end
+    end
+
+    context 'when the primary actor is an internal chat channel' do
+      let!(:channel) { create(:internal_chat_channel, :dm, account: account) }
+      let!(:message) { create(:internal_chat_message, account: account, channel: channel) }
+
+      it 'creates a notification without requiring conversation access or a contact' do
+        expect do
+          described_class.new(
+            notification_type: 'internal_chat_new_message',
+            user: user,
+            account: account,
+            primary_actor: channel,
+            secondary_actor: message
+          ).perform
+        end.to change { user.notifications.count }.by(1)
       end
     end
   end

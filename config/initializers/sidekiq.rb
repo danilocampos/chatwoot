@@ -1,5 +1,7 @@
 require Rails.root.join('lib/redis/config')
 require Rails.root.join('lib/captain_response_dequeued_logger')
+require Rails.root.join('lib/current_reset_middleware')
+require Rails.root.join('lib/sidekiq_death_handler')
 
 schedule_file = 'config/schedule.yml'
 
@@ -19,7 +21,15 @@ end
 Sidekiq.configure_server do |config|
   config.redis = Redis::Config.app
 
+  # A job that exhausts its retries is otherwise silent: it lands in the dead set and
+  # nobody is told. For a reply that means the agent keeps seeing "sent" on a message
+  # that never went out.
+  config.death_handlers << SidekiqDeathHandler.method(:call)
+
   config.server_middleware do |chain|
+    # Outermost, so Current is cleared after everything else in the chain has run.
+    chain.prepend CurrentResetMiddleware
+
     chain.add CaptainResponseDequeuedLogger
 
     chain.add ChatwootDequeuedLogger if ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SIDEKIQ_DEQUEUE_LOGGER', false))
@@ -71,6 +81,9 @@ if Sidekiq.server? && ActiveModel::Type::Boolean.new.cast(ENV.fetch('ENABLE_SIDE
 end
 
 # https://github.com/ondrejbartas/sidekiq-cron
+# Reduce poll interval for second-precision cron jobs
+Sidekiq::Options[:cron_poll_interval] = 10
+
 Rails.application.reloader.to_prepare do
   # load_from_hash! upserts jobs from the YAML and removes any Redis-persisted
   # jobs that share the same source tag but are no longer in the file.

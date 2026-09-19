@@ -41,7 +41,7 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
   end
 
   def archive
-    @portal.update(archive: true)
+    @portal.update!(archive: true)
     head :ok
   end
 
@@ -56,7 +56,7 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
     return render_could_not_create_error(I18n.t('portals.send_instructions.invalid_email_format')) unless valid_email?(email)
     return render_could_not_create_error(I18n.t('portals.send_instructions.custom_domain_not_configured')) if @portal.custom_domain.blank?
 
-    PortalInstructionsMailer.send_cname_instructions(
+    PortalInstructionsMailer.with(account: @portal.account).send_cname_instructions(
       portal: @portal,
       recipient_email: email
     ).deliver_later
@@ -94,13 +94,13 @@ class Api::V1::Accounts::PortalsController < Api::V1::Accounts::BaseController
   def portal_params
     params.require(:portal).permit(
       :id, :color, :custom_domain, :header_text, :homepage_link,
-      :name, :page_title, :slug, :archived,
+      :name, :page_title, :slug, :archived, :custom_head_html, :custom_body_html,
       { config: config_param_keys }
     )
   end
 
   def config_param_keys
-    keys = [:default_locale, :layout, { allowed_locales: [] }, { draft_locales: [] },
+    keys = [:default_locale, :layout, :show_author, { allowed_locales: [] }, { draft_locales: [] },
             { social_profiles: %i[facebook x instagram linkedin youtube tiktok github whatsapp] },
             { locale_translations: locale_translation_keys.index_with { %i[name page_title header_text] } },
             { popular_content: popular_content_keys.index_with { { category_ids: [], article_ids: [] } } }]

@@ -19,6 +19,7 @@
 #  lock_to_single_conversation   :boolean          default(FALSE), not null
 #  name                          :string           not null
 #  out_of_office_message         :string
+#  prevent_assignment_takeover   :boolean          default(FALSE), not null
 #  sender_name_type              :integer          default("friendly"), not null
 #  timezone                      :string           default("UTC")
 #  working_hours_enabled         :boolean          default(FALSE)
@@ -66,15 +67,20 @@ class Inbox < ApplicationRecord
   has_many :contacts, through: :contact_inboxes
 
   has_many :inbox_members, dependent: :destroy_async
+  has_many :inbox_signatures, dependent: :destroy_async
   has_many :members, through: :inbox_members, source: :user
   has_many :conversations, dependent: :destroy_async
   has_many :messages, dependent: :destroy_async
+  has_many :scheduled_messages, dependent: :destroy_async
+  has_many :recurring_scheduled_messages, dependent: :destroy_async
   has_many :email_templates, dependent: :destroy_async
 
   has_one :inbox_assignment_policy, dependent: :destroy
   has_one :assignment_policy, through: :inbox_assignment_policy
   has_one :agent_bot_inbox, dependent: :destroy_async
   has_one :agent_bot, through: :agent_bot_inbox
+  has_many :agent_bot_observers, dependent: :destroy_async
+  has_many :observer_agent_bots, through: :agent_bot_observers, source: :agent_bot
   has_many :webhooks, dependent: :destroy_async
   has_many :hooks, dependent: :destroy_async, class_name: 'Integrations::Hook'
 
@@ -187,15 +193,17 @@ class Inbox < ApplicationRecord
   end
 
   def callback_webhook_url
+    host = ENV.fetch('FRONTEND_URL', nil)
     case channel_type
     when 'Channel::TwilioSms'
-      "#{ENV.fetch('FRONTEND_URL', nil)}/twilio/callback"
+      "#{host}/twilio/callback"
     when 'Channel::Sms'
-      "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/sms/#{channel.phone_number.delete_prefix('+')}"
+      "#{host}/webhooks/sms/#{channel.phone_number.delete_prefix('+')}"
     when 'Channel::Line'
-      "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/line/#{channel.line_channel_id}"
+      "#{host}/webhooks/line/#{channel.line_channel_id}"
     when 'Channel::Whatsapp'
-      "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/whatsapp/#{channel.phone_number}"
+      host = ENV.fetch('INTERNAL_HOST_URL', nil) if channel.use_internal_host?
+      "#{host}/webhooks/whatsapp/#{channel.phone_number}"
     end
   end
 

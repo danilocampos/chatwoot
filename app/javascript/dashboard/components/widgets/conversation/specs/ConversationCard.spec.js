@@ -59,6 +59,18 @@ describe('ConversationCard', () => {
     expect(wrapper.findComponent({ name: 'CardLabels' }).exists()).toBe(false);
   });
 
+  it('does not show the pin icon by default', () => {
+    const wrapper = mountComponent({});
+
+    expect(wrapper.findComponent({ name: 'CardPinIcon' }).exists()).toBe(false);
+  });
+
+  it('shows the pin icon when the conversation is pinned', () => {
+    const wrapper = mountComponent({}, {}, { isPinned: true });
+
+    expect(wrapper.findComponent({ name: 'CardPinIcon' }).exists()).toBe(true);
+  });
+
   it('uses the bot icon for a Captain assignee', () => {
     const wrapper = mountComponent(
       { meta: { assignee_type: 'Captain::Assistant' } },

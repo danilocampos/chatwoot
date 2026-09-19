@@ -38,10 +38,11 @@ module Enterprise::Message
     super
   end
 
-  def mark_pending_conversation_as_open_for_human_response
+  def mark_pending_conversation_as_open_for_human_response # rubocop:disable Metrics/CyclomaticComplexity
     return unless captain_pending_conversation?
     return unless human_response?
     return if private?
+    return if reaction?
     return if template_bootstrap_message?
 
     previous_user = Current.user

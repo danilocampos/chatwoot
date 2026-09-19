@@ -60,8 +60,16 @@ class AutomationRules::ActionService < ActionService
     teams.each do |team|
       break unless @account.within_email_rate_limit?
 
-      TeamNotifications::AutomationNotificationMailer.conversation_creation(@conversation, team, params[0][:message])&.deliver_now
+      TeamNotifications::AutomationNotificationMailer.with(account: @account)
+                                                     .conversation_creation(@conversation, team, params[0][:message])&.deliver_now
       @account.increment_email_sent_count
     end
+  end
+
+  def scheduled_message_attachment_blob(blob_id)
+    return if blob_id.blank?
+
+    attachment = @rule.files.find { |file| file.blob_id == blob_id.to_i }
+    attachment&.blob
   end
 end

@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue';
 import { useStore } from 'dashboard/composables/store';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
@@ -15,7 +16,17 @@ const emit = defineEmits(['cancel']);
 const store = useStore();
 const uiFlags = useMapGetter('contacts/getUIFlags');
 
-const onCancel = () => emit('cancel');
+const contactForm = ref(null);
+const confirmDiscardDialog = ref(null);
+
+const onCancel = async () => {
+  const hasChanges = contactForm.value?.hasUnsavedChanges;
+  if (hasChanges) {
+    const shouldDiscard = await confirmDiscardDialog.value?.showConfirmation();
+    if (!shouldDiscard) return;
+  }
+  emit('cancel');
+};
 
 const onSubmit = async contactItem => {
   await store.dispatch('contacts/update', contactItem);
@@ -59,12 +70,20 @@ useKeyboardEvents({
         <Button icon="i-lucide-x" slate ghost sm @click="onCancel" />
       </div>
       <ContactForm
+        ref="contactForm"
         :contact="contact"
         :in-progress="uiFlags.isUpdating"
         :on-submit="onSubmit"
-        @success="onCancel"
+        @success="$emit('cancel')"
         @cancel="onCancel"
       />
     </div>
   </transition>
+  <woot-confirm-modal
+    ref="confirmDiscardDialog"
+    :title="$t('EDIT_CONTACT.CONFIRM_DISCARD.TITLE')"
+    :description="$t('EDIT_CONTACT.CONFIRM_DISCARD.MESSAGE')"
+    :confirm-label="$t('EDIT_CONTACT.CONFIRM_DISCARD.YES')"
+    :cancel-label="$t('EDIT_CONTACT.CONFIRM_DISCARD.NO')"
+  />
 </template>

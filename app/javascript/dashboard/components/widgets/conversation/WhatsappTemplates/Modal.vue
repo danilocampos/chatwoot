@@ -12,8 +12,12 @@ export default {
       default: false,
     },
     inboxId: {
-      type: Number,
+      type: [Number, String],
       default: undefined,
+    },
+    sendButtonLabel: {
+      type: String,
+      default: '',
     },
     sendRenderedContent: {
       type: Boolean,
@@ -88,6 +92,7 @@ export default {
       <WhatsAppTemplateReply
         v-else
         :template="selectedWaTemplate"
+        :send-button-label="sendButtonLabel"
         :send-rendered-content="sendRenderedContent"
         @reset-template="onResetTemplate"
         @send-message="onSendMessage"

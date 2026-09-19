@@ -15,7 +15,9 @@ import {
   // AUTOMATION_RULE_EVENTS,
   // AUTOMATION_ACTION_TYPES,
   AUTOMATIONS,
+  DEFAULT_SCHEDULED_MESSAGE_DELAY_MINUTES,
 } from 'dashboard/routes/dashboard/settings/automation/constants.js';
+import { CUSTOM_ATTRIBUTE_EVENTS } from 'dashboard/constants/automation';
 
 /**
  * Composable for handling automation-related functionality.
@@ -123,10 +125,18 @@ export function useAutomation(startValue = null) {
    * @param {number} index - The index of the action to reset.
    */
   const resetAction = index => {
+    const action = automation.value.actions[index];
     const newActions = [...automation.value.actions];
+
+    // For scheduled messages, initialize with default delay
+    const actionParams =
+      action.action_name === 'create_scheduled_message'
+        ? [{ delay_minutes: DEFAULT_SCHEDULED_MESSAGE_DELAY_MINUTES }]
+        : [];
+
     newActions[index] = {
       ...newActions[index],
-      action_params: [],
+      action_params: actionParams,
     };
 
     automation.value.actions = newActions;
@@ -165,12 +175,11 @@ export function useAutomation(startValue = null) {
       'contact_custom_attribute',
     ]);
 
-    [
-      'message_created',
-      'conversation_created',
-      'conversation_updated',
-      'conversation_opened',
-    ].forEach(eventToUpdate => {
+    // The list is named in `dashboard/constants/automation`, not spelled out here. It used to name
+    // `message_created` alone and reached the edit trigger only because the two shared one object,
+    // so anything that replaced `automationTypes.message_created` detached the edit trigger from its
+    // custom attributes without a word. #667
+    CUSTOM_ATTRIBUTE_EVENTS.forEach(eventToUpdate => {
       const standardConditions = automationTypes[
         eventToUpdate
       ].conditions.filter(

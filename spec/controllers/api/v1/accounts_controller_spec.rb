@@ -184,7 +184,7 @@ RSpec.describe 'Accounts API', type: :request do
 
     context 'when it is an authenticated user' do
       it 'shows an account' do
-        account.update(name: 'new name')
+        account.update!(name: 'new name')
 
         get "/api/v1/accounts/#{account.id}",
             headers: admin.create_new_auth_token,
@@ -232,7 +232,7 @@ RSpec.describe 'Accounts API', type: :request do
     let(:admin) { create(:user, account: account, role: :administrator) }
 
     it 'returns cache_keys as expected' do
-      account.update(auto_resolve_duration: 30)
+      account.update!(auto_resolve_duration: 30)
 
       get "/api/v1/accounts/#{account.id}/cache_keys",
           headers: admin.create_new_auth_token,
@@ -265,6 +265,32 @@ RSpec.describe 'Accounts API', type: :request do
 
         expect(response).to have_http_status(:forbidden)
       end
+    end
+  end
+
+  describe 'DELETE /api/v1/accounts/{account.id}/brand_logo_email' do
+    let(:account) { create(:account) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:admin) { create(:user, account: account, role: :administrator) }
+
+    before do
+      account.brand_logo_email.attach(
+        io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png'
+      )
+    end
+
+    it 'removes the logo for an administrator' do
+      delete "/api/v1/accounts/#{account.id}/brand_logo_email", headers: admin.create_new_auth_token
+
+      expect(response).to have_http_status(:success)
+      expect(account.reload.brand_logo_email).not_to be_attached
+    end
+
+    it 'refuses an agent' do
+      delete "/api/v1/accounts/#{account.id}/brand_logo_email", headers: agent.create_new_auth_token
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(account.reload.brand_logo_email).to be_attached
     end
   end
 
@@ -333,8 +359,50 @@ RSpec.describe 'Accounts API', type: :request do
         end
       end
 
+      it 'stores the email brand fields' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { brand_name: 'Guichê Web', brand_url: 'https://www.guicheweb.com.br', brand_color: '#11D135' },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.brand_name).to eq('Guichê Web')
+        expect(account.reload.brand_url).to eq('https://www.guicheweb.com.br')
+        expect(account.reload.brand_color).to eq('#11D135')
+      end
+
+      it 'rejects a brand colour that is not a hex value' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { brand_color: 'rebeccapurple' },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(account.reload.brand_color).to be_nil
+      end
+
+      it 'attaches an email logo' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { brand_logo_email: fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png') },
+              headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.brand_logo_email).to be_attached
+      end
+
+      # SVG renders in the dashboard and in no mail client, so accepting it here would put a
+      # broken image at the top of every email the account sends.
+      it 'refuses a logo in a format email cannot render' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { brand_logo_email: fixture_file_upload(Rails.root.join('spec/assets/sample.pdf'), 'application/pdf') },
+              headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(account.reload.brand_logo_email).not_to be_attached
+      end
+
       it 'updates onboarding step to invite_team if onboarding step is present in account custom attributes' do
-        account.update(custom_attributes: { onboarding_step: 'account_update' })
+        account.update!(custom_attributes: { onboarding_step: 'account_update' })
         patch "/api/v1/accounts/#{account.id}",
               params: params,
               headers: admin.create_new_auth_token,

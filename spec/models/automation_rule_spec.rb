@@ -138,6 +138,56 @@ RSpec.describe AutomationRule do
     end
   end
 
+  describe 'create_scheduled_message action validation' do
+    let(:account) { create(:account) }
+
+    def build_rule_with_scheduled_message(action_params)
+      FactoryBot.build(:automation_rule,
+                       account: account,
+                       event_name: 'conversation_created',
+                       conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: nil }],
+                       actions: [{ action_name: 'create_scheduled_message', action_params: [action_params] }])
+    end
+
+    it 'is valid with content and valid delay' do
+      rule = build_rule_with_scheduled_message({ 'content' => 'Hello', 'delay_minutes' => 60 })
+      expect(rule).to be_valid
+    end
+
+    it 'is valid with template_params and valid delay' do
+      rule = build_rule_with_scheduled_message({ 'template_params' => { 'name' => 'test' }, 'delay_minutes' => 60 })
+      expect(rule).to be_valid
+    end
+
+    it 'is invalid when delay_minutes is below minimum' do
+      rule = build_rule_with_scheduled_message({ 'content' => 'Hello', 'delay_minutes' => 0 })
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to be_present
+    end
+
+    it 'is invalid when delay_minutes exceeds maximum' do
+      rule = build_rule_with_scheduled_message({ 'content' => 'Hello', 'delay_minutes' => described_class::MAX_SCHEDULED_MESSAGE_DELAY_MINUTES + 1 })
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to be_present
+    end
+
+    it 'is valid at maximum delay boundary' do
+      rule = build_rule_with_scheduled_message({ 'content' => 'Hello', 'delay_minutes' => described_class::MAX_SCHEDULED_MESSAGE_DELAY_MINUTES })
+      expect(rule).to be_valid
+    end
+
+    it 'is valid at minimum delay boundary' do
+      rule = build_rule_with_scheduled_message({ 'content' => 'Hello', 'delay_minutes' => 1 })
+      expect(rule).to be_valid
+    end
+
+    it 'is invalid without content, attachment, or template_params' do
+      rule = build_rule_with_scheduled_message({ 'delay_minutes' => 60 })
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to be_present
+    end
+  end
+
   describe 'execution_delay validations' do
     let(:rule) { build(:automation_rule, account: create(:account)) }
 
@@ -200,6 +250,36 @@ RSpec.describe AutomationRule do
       rule.conditions = [{ 'attribute_key' => 'priority', 'filter_operator' => 'equal_to', 'values' => ['urgent'], 'query_operator' => nil }]
       expect(rule).not_to be_valid
       expect(rule.errors[:execution_delay]).to include('only supports status and inbox conditions for conversation-level events.')
+    end
+
+    # A delayed rule anchors its due time on `waiting_since` or on the message's creation and dedupes its
+    # episode by message id, and an edit has neither: an edit of an hour-old message would be overdue the
+    # moment it armed, and a second edit of the same message could not arm at all. Refused until the
+    # scheduling knows about edits, rather than armed on an anchor that does not describe it (#648).
+    it 'rejects a delayed message_edited rule with a content condition' do
+      rule.event_name = 'message_edited'
+      rule.execution_delay = 60
+      rule.conditions = [{ 'attribute_key' => 'content', 'filter_operator' => 'contains', 'values' => ['orçamento'], 'query_operator' => nil }]
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_delay]).to include('is not supported for rules triggered by an edit.')
+    end
+
+    # The conditions are not what makes it unsupported: the anchor is. An inbox filter would otherwise
+    # walk through the whitelist written for conversation-level events.
+    it 'rejects a delayed message_edited rule whose conditions are all whitelisted' do
+      rule.event_name = 'message_edited'
+      rule.execution_delay = 60
+      rule.conditions = [{ 'attribute_key' => 'inbox_id', 'filter_operator' => 'equal_to', 'values' => [1], 'query_operator' => nil }]
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_delay]).to include('is not supported for rules triggered by an edit.')
+    end
+
+    it 'rejects a delayed message_edited rule with no conditions at all' do
+      rule.event_name = 'message_edited'
+      rule.execution_delay = 60
+      rule.conditions = []
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_delay]).to include('is not supported for rules triggered by an edit.')
     end
 
     it 'allows a delayed conversation-level rule with only status conditions' do

@@ -49,7 +49,7 @@ RSpec.describe Whatsapp::BusinessManagementTokenService do
   end
 
   it 'rejects updates for manually configured WhatsApp Cloud inboxes' do
-    channel.provider_config = channel.provider_config.except('source')
+    channel.provider_config.delete('source')
 
     expect { service.update!('business-token') }
       .to raise_error(ArgumentError, 'Business management token is only supported for WhatsApp Embedded Signup inboxes')

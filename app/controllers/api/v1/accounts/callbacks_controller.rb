@@ -36,7 +36,7 @@ class Api::V1::Accounts::CallbacksController < Api::V1::Accounts::BaseController
 
   def sync_page_details(page_access_token, facebook_channel)
     page_details = Facebook::PageDetailsService.new(access_token: page_access_token).perform
-    facebook_channel.update(page_details.compact)
+    facebook_channel.update!(page_details.compact)
   rescue StandardError => e
     Rails.logger.error "Error in sync_page_details: #{e.message}"
   end

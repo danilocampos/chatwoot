@@ -42,3 +42,6 @@
     document.documentElement.classList.add('light')
   }
 </script>
+<% if !@is_plain_layout_enabled && @portal.custom_head_html.present? %>
+  <%= @portal.custom_head_html.html_safe %>
+<% end %>

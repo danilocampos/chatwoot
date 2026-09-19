@@ -28,19 +28,12 @@ json.meta do
 end
 
 json.id conversation.display_id
-# The dashboard seeds the message thread from this array and then paginates BACKWARD
-# by id (before: messages[0].id). Keep the seed as the chronologically latest message,
-# but add an id tiebreaker: without it, same-second siblings (e.g. the input_csat survey
-# created alongside activity messages during an auto-resolve burst) could resolve to a
-# lower-id activity, and backward pagination would then never load the higher-id survey.
-last_message = conversation.messages.where(account_id: conversation.account_id)
-                           .includes([{ attachments: [{ file_attachment: [:blob] }] }])
-                           .reorder(created_at: :desc, id: :desc).first
-if last_message.blank?
-  json.messages []
-else
-  json.messages [last_message.try(:push_event_data)]
-end
+# Two distinct queries on purpose: the seed below is the pagination cursor and
+# must be the newest renderable message, while `last_non_activity_message` is
+# the chat list preview and must skip activity messages. See the invariants
+# documented on both `Conversation` methods before touching either.
+seed_message = conversation.dashboard_seed_message
+json.messages seed_message ? [seed_message.push_event_data] : []
 
 json.account_id conversation.account_id
 json.uuid conversation.uuid
@@ -66,8 +59,35 @@ json.updated_at conversation.updated_at.to_f
 json.timestamp conversation.last_activity_at.to_i
 json.first_reply_created_at conversation.first_reply_created_at.to_i
 json.unread_count conversation.unread_incoming_messages.count
-json.last_non_activity_message conversation.messages.where(account_id: conversation.account_id).non_activity_messages.first.try(:push_event_data)
+last_non_activity_message = conversation.last_non_activity_message
+if last_non_activity_message
+  json.last_non_activity_message do
+    json.merge! last_non_activity_message.push_event_data
+    if last_non_activity_message.reaction?
+      target_id = last_non_activity_message.content_attributes['in_reply_to']
+      target = target_id.present? ? conversation.messages.find_by(id: target_id) : nil
+      # strip_tags so the preview of an HTML/email target doesn't render as
+      # literal "<p>..." markup in the chat list card. Wrap with `String.new`
+      # because `strip_tags` returns `ActiveSupport::SafeBuffer`, which
+      # Sidekiq's strict-args check rejects when this hash flows into a cable
+      # broadcast job (event_data_presenter.rb shares the same pattern).
+      if target&.content.present?
+        plain_snippet = String.new(ActionController::Base.helpers.strip_tags(target.content))
+        json.in_reply_to_snippet plain_snippet.truncate(60)
+      end
+    end
+  end
+else
+  json.last_non_activity_message nil
+end
 json.last_activity_at conversation.last_activity_at.to_i
+json.group_type conversation.group_type
+# Whether THIS thread's number has left the WhatsApp group. The group contact is
+# account-scoped and can be in two inboxes of one account, so the answer belongs to the
+# conversation rather than to the contact every thread shares. Only groups carry it:
+# `contact_inbox` is preloaded for the list, but the question is meaningless anywhere
+# else and an always-false field on every conversation is noise.
+json.group_left conversation.contact_inbox&.group_left? if conversation.group_type_group?
 json.priority conversation.priority
 json.waiting_since conversation.waiting_since.to_i.to_i
 sla_applicable = conversation.account.feature_enabled?('sla') && (!conversation.respond_to?(:sla_applicable?) || conversation.sla_applicable?)

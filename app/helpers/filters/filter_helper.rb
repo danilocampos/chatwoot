@@ -1,4 +1,4 @@
-module Filters::FilterHelper
+module Filters::FilterHelper # rubocop:disable Metrics/ModuleLength
   def build_condition_query(model_filters, query_hash, current_index)
     current_filter = model_filters[query_hash['attribute_key']]
 
@@ -126,6 +126,10 @@ module Filters::FilterHelper
 
   def conversation_priority_values(values)
     values.map { |x| Conversation.priorities[x.to_sym] }
+  end
+
+  def conversation_group_type_values(values)
+    values.map { |x| Conversation.group_types[x.to_sym] }
   end
 
   def message_type_values(values)

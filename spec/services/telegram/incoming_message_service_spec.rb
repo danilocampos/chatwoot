@@ -654,7 +654,7 @@ describe Telegram::IncomingMessageService do
 
         # Mark the conversation as resolved
         conversation = telegram_channel.inbox.conversations.last
-        conversation.update(status: :resolved)
+        conversation.update!(status: :resolved)
 
         # Send a new message
         new_params = {
@@ -709,7 +709,7 @@ describe Telegram::IncomingMessageService do
 
         # Mark the conversation as resolved
         conversation = telegram_channel.inbox.conversations.last
-        conversation.update(status: :resolved)
+        conversation.update!(status: :resolved)
 
         # Send a new message
         new_params = {
@@ -736,7 +736,7 @@ describe Telegram::IncomingMessageService do
 
     it 'reopens last conversation if last conversation is resolved' do
       telegram_channel.inbox.update!(lock_to_single_conversation: true)
-      contact_inbox = ContactInbox.find_or_create_by(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
+      contact_inbox = ContactInbox.find_or_create_by!(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
         ci.contact = create(:contact)
       end
       resolved_conversation = create(:conversation, inbox: telegram_channel.inbox, contact_inbox: contact_inbox, status: :resolved)
@@ -762,7 +762,7 @@ describe Telegram::IncomingMessageService do
 
     it 'creates new conversation if last conversation is resolved' do
       telegram_channel.inbox.update!(lock_to_single_conversation: false)
-      contact_inbox = ContactInbox.find_or_create_by(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
+      contact_inbox = ContactInbox.find_or_create_by!(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
         ci.contact = create(:contact)
       end
       _resolved_conversation = create(:conversation, inbox: telegram_channel.inbox, contact_inbox: contact_inbox, status: :resolved)
@@ -781,7 +781,7 @@ describe Telegram::IncomingMessageService do
 
     it 'appends to last conversation if last conversation is not resolved' do
       telegram_channel.inbox.update!(lock_to_single_conversation: false)
-      contact_inbox = ContactInbox.find_or_create_by(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
+      contact_inbox = ContactInbox.find_or_create_by!(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
         ci.contact = create(:contact)
       end
       open_conversation = create(:conversation, inbox: telegram_channel.inbox, contact_inbox: contact_inbox, status: :open)

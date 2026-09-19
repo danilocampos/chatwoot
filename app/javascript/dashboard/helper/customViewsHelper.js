@@ -80,6 +80,10 @@ const getValuesForPriority = (values, priority) => {
   return priority.filter(option => values.includes(option.id));
 };
 
+const getValuesForGroupType = (values, groupType) => {
+  return groupType.filter(option => values.includes(option.id));
+};
+
 export const getValuesForFilter = (filter, params) => {
   const { attribute_key, values } = filter;
   const {
@@ -91,6 +95,7 @@ export const getValuesForFilter = (filter, params) => {
     campaigns,
     labels,
     priority,
+    group_type: groupType = [],
     contacts,
   } = params;
   switch (attribute_key) {
@@ -114,6 +119,8 @@ export const getValuesForFilter = (filter, params) => {
       return getValuesForLanguages(values, languages);
     case 'country_code':
       return getValuesForCountries(values, countries);
+    case 'group_type':
+      return getValuesForGroupType(values, groupType);
     default:
       return { id: values[0], name: values[0] };
   }
@@ -122,6 +129,10 @@ export const getValuesForFilter = (filter, params) => {
 export const generateValuesForEditCustomViews = (filter, params) => {
   const { attribute_key, filter_operator, values } = filter;
   const { filterTypes, allCustomAttributes } = params;
+
+  // Presence operators have no input, so a saved folder holds no value to map back.
+  if (['is_present', 'is_not_present'].includes(filter_operator)) return [];
+
   const inputType = getInputType(attribute_key, filter_operator, filterTypes);
 
   if (inputType === undefined) {

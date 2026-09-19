@@ -100,7 +100,7 @@ class DeviseOverrides::OmniauthCallbacksController < DeviseTokenAuth::OmniauthCa
 
   def set_random_password_if_oauth_user
     # Password must satisfy secure_password requirements (uppercase, lowercase, number, special char)
-    @resource.update(password: "#{SecureRandom.hex(16)}aA1!") if @resource.persisted?
+    @resource.update!(password: "#{SecureRandom.hex(16)}aA1!") if @resource.persisted?
   end
 
   def default_devise_mapping

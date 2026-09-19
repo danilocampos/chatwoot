@@ -132,7 +132,7 @@ RSpec.describe Conversation do
     end
 
     it 'sends conversation updated event if labels are updated' do
-      conversation.update(label_list: [label.title])
+      conversation.update!(label_list: [label.title])
       changed_attributes = conversation.previous_changes
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(
@@ -173,7 +173,7 @@ RSpec.describe Conversation do
     end
 
     it 'runs after_update callbacks' do
-      conversation.update(
+      conversation.update!(
         status: :resolved,
         contact_last_seen_at: Time.zone.now,
         assignee: new_assignee
@@ -213,7 +213,7 @@ RSpec.describe Conversation do
     end
 
     it 'will not run conversation_updated event for non whitelisted keys' do
-      conversation.update(updated_at: DateTime.now.utc)
+      conversation.update!(updated_at: DateTime.now.utc)
       expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
         .with(described_class::CONVERSATION_UPDATED, kind_of(Time), conversation: conversation, notifiable_assignee_change: true)
     end
@@ -262,7 +262,7 @@ RSpec.describe Conversation do
     end
 
     it 'creates conversation activities' do
-      conversation.update(
+      conversation.update!(
         status: :resolved,
         contact_last_seen_at: Time.zone.now,
         assignee: new_assignee,
@@ -285,7 +285,7 @@ RSpec.describe Conversation do
     end
 
     it 'adds a message for system auto resolution if marked resolved by system' do
-      account.update(auto_resolve_after: 40 * 24 * 60)
+      account.update!(auto_resolve_after: 40 * 24 * 60)
       conversation2 = create(:conversation, status: 'open', account: account, assignee: old_assignee)
       Current.reset
 
@@ -302,6 +302,31 @@ RSpec.describe Conversation do
         .with(conversation2, { account_id: conversation2.account_id, inbox_id: conversation2.inbox_id, message_type: :activity,
                                content: system_resolved_message,
                                content_attributes: { activity: { type: 'conversation_status_changed', status: 'resolved' } } })
+    end
+  end
+
+  describe 'pins on status change' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:conversation) { create(:conversation, status: 'open', account: account, inbox: inbox) }
+    let(:user) { create(:user, account: account, role: :agent) }
+
+    before do
+      create(:inbox_member, user: user, inbox: inbox)
+      create(:conversation_pin, conversation: conversation, user: user, account: account)
+    end
+
+    it 'removes every pin when the conversation is resolved' do
+      expect { conversation.update!(status: :resolved) }.to change { conversation.conversation_pins.count }.from(1).to(0)
+    end
+
+    it 'keeps the pins when the conversation is snoozed' do
+      expect { conversation.update!(status: :snoozed, snoozed_until: 1.day.from_now) }
+        .not_to(change { conversation.conversation_pins.count })
+    end
+
+    it 'keeps the pins when the conversation is set to pending' do
+      expect { conversation.update!(status: :pending) }.not_to(change { conversation.conversation_pins.count })
     end
   end
 
@@ -383,6 +408,21 @@ RSpec.describe Conversation do
       conversation = create(:conversation, status: 'snoozed')
       expect(conversation.toggle_status).to be(true)
       expect(conversation.reload.status).to eq('open')
+    end
+  end
+
+  describe '#toggled_status' do
+    it 'reports where a toggle would land without writing it' do
+      conversation = create(:conversation, status: 'open')
+
+      expect(conversation.toggled_status).to eq(:resolved)
+      expect(conversation.reload.status).to eq('open')
+    end
+
+    it 'reopens from every non-open status' do
+      %w[resolved pending snoozed].each do |status|
+        expect(create(:conversation, status: status).toggled_status).to eq(:open)
+      end
     end
   end
 
@@ -515,7 +555,7 @@ RSpec.describe Conversation do
 
     context 'when contact is missing' do
       before do
-        conversation.update_columns(contact_id: nil, contact_inbox_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        allow(conversation).to receive(:contact).and_return(nil)
       end
 
       it 'does not change conversation status' do
@@ -559,7 +599,7 @@ RSpec.describe Conversation do
       let(:conversation) { create(:conversation) }
 
       before do
-        conversation.update_columns(contact_id: nil, contact_inbox_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        allow(conversation).to receive(:contact).and_return(nil)
       end
 
       it 'does not change conversation status' do
@@ -588,7 +628,7 @@ RSpec.describe Conversation do
 
     context 'when contact is missing' do
       before do
-        conversation.update_columns(contact_id: nil, contact_inbox_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        allow(conversation).to receive(:contact).and_return(nil)
       end
 
       it 'returns false' do
@@ -646,6 +686,63 @@ RSpec.describe Conversation do
     end
   end
 
+  # The dashboard pages backwards from this message with `id < cursor`, so any
+  # message_type/private filter here hides everything created after it.
+  describe '#dashboard_seed_message' do
+    let(:conversation) { create(:conversation) }
+    let!(:regular) { create(:message, conversation: conversation, account: conversation.account) }
+
+    it 'returns the newest message when it is an activity message' do
+      activity = create(:message, conversation: conversation, account: conversation.account, message_type: :activity)
+
+      expect(conversation.dashboard_seed_message).to eq(activity)
+    end
+
+    it 'returns the newest message when it is a private note' do
+      private_note = create(:message, conversation: conversation, account: conversation.account, private: true)
+
+      expect(conversation.dashboard_seed_message).to eq(private_note)
+    end
+
+    it 'skips reactions whose user-facing state is removed' do
+      create(:message, conversation: conversation, account: conversation.account, content: '',
+                       content_attributes: { is_reaction: true, deleted: true })
+
+      expect(conversation.dashboard_seed_message).to eq(regular)
+    end
+
+    # Pagination compares ids, so on a `created_at` tie the cursor has to be the
+    # highest id — otherwise the rows between the two land outside both the seed
+    # and the `id < cursor` page. Bulk imports write second-precision
+    # timestamps, so ties are not hypothetical.
+    it 'breaks created_at ties by id' do
+      timestamp = 1.hour.ago
+      regular.update!(created_at: timestamp)
+      newest = create(:message, conversation: conversation, account: conversation.account)
+      newest.update!(created_at: timestamp)
+
+      expect(conversation.dashboard_seed_message).to eq(newest)
+    end
+  end
+
+  describe '#last_non_activity_message' do
+    let(:conversation) { create(:conversation) }
+    let!(:regular) { create(:message, conversation: conversation, account: conversation.account) }
+
+    it 'skips activity messages' do
+      create(:message, conversation: conversation, account: conversation.account, message_type: :activity)
+
+      expect(conversation.last_non_activity_message).to eq(regular)
+    end
+
+    it 'skips reactions whose user-facing state is removed' do
+      create(:message, conversation: conversation, account: conversation.account, content: '',
+                       content_attributes: { is_reaction: true, deleted: true })
+
+      expect(conversation.last_non_activity_message).to eq(regular)
+    end
+  end
+
   describe 'unread_incoming_messages' do
     subject(:unread_incoming_messages) { conversation.unread_incoming_messages }
 
@@ -694,6 +791,7 @@ RSpec.describe Conversation do
         },
         id: conversation.display_id,
         messages: [],
+        last_non_activity_message: nil,
         labels: [],
         last_activity_at: conversation.last_activity_at.to_i,
         inbox_id: conversation.inbox_id,
@@ -711,7 +809,11 @@ RSpec.describe Conversation do
         updated_at: conversation.updated_at.to_f,
         waiting_since: conversation.waiting_since.to_i,
         priority: nil,
-        unread_count: 0
+        unread_count: 0,
+        group_type: 'individual',
+        # Present on every conversation, nil included: its absence is what tells a consumer this
+        # Chatwoot does not speak about redirect pairings at all (fazer-ai/agents#222).
+        redirect_origin_display_id: nil
       }
     end
 
@@ -786,6 +888,26 @@ RSpec.describe Conversation do
         conversation = create(:conversation, inbox: inbox, campaign: campaign)
         expect(conversation.status).to eq('open')
       end
+    end
+  end
+
+  describe '#botinbox: when conversation created inside inbox with only an observer bot' do
+    let!(:observer) { create(:agent_bot_observer) }
+    let(:conversation) { create(:conversation, inbox: observer.inbox) }
+
+    it 'starts open, like an inbox with no bot' do
+      expect(conversation.status).to eq('open')
+    end
+
+    it 'assigns no agent bot' do
+      expect(conversation.ai_assignee).to be_nil
+    end
+
+    it 'reopens as open, not pending, when the contact writes to a resolved conversation' do
+      conversation.update!(status: :resolved)
+      create(:message, message_type: :incoming, account: conversation.account, inbox: conversation.inbox, conversation: conversation)
+
+      expect(conversation.reload.status).to eq('open')
     end
   end
 
@@ -1030,7 +1152,7 @@ RSpec.describe Conversation do
     let(:conversation) { create(:conversation) }
 
     it 'returns the correct list of labels' do
-      conversation.update(label_list: %w[customer-support enterprise paid-customer])
+      conversation.update!(label_list: %w[customer-support enterprise paid-customer])
 
       expect(conversation.cached_label_list_array).to eq %w[customer-support enterprise paid-customer]
     end
@@ -1266,6 +1388,127 @@ RSpec.describe Conversation do
         expect(reply_events.count).to eq(1) # Only the second agent reply creates a reply_time event
         # Reply time should be 1 hour (from customer message 2 to agent reply)
         expect(reply_events.first.value).to be_within(60).of(3600)
+      end
+    end
+  end
+
+  describe 'group_type' do
+    it 'provides type check methods' do
+      individual_conversation = create(:conversation, group_type: :individual)
+      group_conversation = create(:conversation, group_type: :group)
+
+      expect(individual_conversation).to be_group_type_individual
+      expect(group_conversation).to be_group_type_group
+    end
+  end
+
+  describe 'assignment takeover guard' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:owner) { create(:user, account: account, role: :agent) }
+    let(:other_agent) { create(:user, account: account, role: :agent) }
+    let(:administrator) { create(:user, account: account, role: :administrator) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox, assignee: owner) }
+
+    before do
+      create(:inbox_member, user: owner, inbox: inbox)
+      create(:inbox_member, user: other_agent, inbox: inbox)
+      conversation
+    end
+
+    after { Current.reset }
+
+    context 'when the inbox allows takeover' do
+      it 'lets another agent take the conversation over' do
+        Current.user = other_agent
+
+        expect { conversation.update!(assignee: other_agent) }
+          .to change { conversation.reload.assignee }.from(owner).to(other_agent)
+      end
+    end
+
+    context 'when the inbox prevents takeover' do
+      before { inbox.update!(prevent_assignment_takeover: true) }
+
+      it 'refuses another agent with the current assignee name' do
+        Current.user = other_agent
+
+        expect { conversation.update!(assignee: other_agent) }
+          .to raise_error(CustomExceptions::Conversation::AlreadyAssigned, /#{owner.available_name}/)
+        expect(conversation.reload.assignee).to eq(owner)
+      end
+
+      # Otherwise the takeover is just a two-step process: unassign, then claim.
+      it 'refuses another agent unassigning the conversation' do
+        Current.user = other_agent
+
+        expect { conversation.update!(assignee: nil) }
+          .to raise_error(CustomExceptions::Conversation::AlreadyAssigned)
+      end
+
+      it 'lets the current assignee hand the conversation over' do
+        Current.user = owner
+
+        expect { conversation.update!(assignee: other_agent) }
+          .to change { conversation.reload.assignee }.from(owner).to(other_agent)
+      end
+
+      it 'lets the current assignee release the conversation' do
+        Current.user = owner
+
+        expect { conversation.update!(assignee: nil) }
+          .to change { conversation.reload.assignee }.from(owner).to(nil)
+      end
+
+      it 'lets an administrator reassign the conversation' do
+        Current.user = administrator
+
+        expect { conversation.update!(assignee: other_agent) }
+          .to change { conversation.reload.assignee }.from(owner).to(other_agent)
+      end
+
+      # Round-robin, automation rules and voice webhooks all reach the callback
+      # without a Current.user, which is what tells them apart from a claim.
+      it 'lets automated assignment through' do
+        expect { conversation.update!(assignee: other_agent) }
+          .to change { conversation.reload.assignee }.from(owner).to(other_agent)
+      end
+
+      # Two agents claiming the same free conversation both load it with a nil
+      # assignee, so a guard that trusted `assignee_id_was` would let both write
+      # and the second would silently win. That is the very race this feature
+      # exists to close, so it is checked against the database under a row lock.
+      it 'refuses a claim made against a stale copy of the conversation' do
+        inbox.update!(enable_auto_assignment: false)
+        free = create(:conversation, account: account, inbox: inbox, assignee: nil)
+        stale = described_class.find(free.id)
+
+        Current.user = owner
+        free.update!(assignee: owner)
+
+        Current.user = other_agent
+        stale.assignee = other_agent
+
+        expect { stale.save! }.to raise_error(CustomExceptions::Conversation::AlreadyAssigned)
+        expect(free.reload.assignee).to eq(owner)
+      end
+
+      # A bot-authenticated request lands here with an AgentBot in Current.user,
+      # whose id would otherwise be compared against users.id.
+      it 'lets an agent bot reassign the conversation' do
+        Current.user = create(:agent_bot, account: account)
+
+        expect { conversation.update!(assignee: other_agent) }
+          .to change { conversation.reload.assignee }.from(owner).to(other_agent)
+      end
+
+      it 'lets an agent claim a conversation that has no assignee' do
+        inbox.update!(enable_auto_assignment: false)
+        unassigned = create(:conversation, account: account, inbox: inbox, assignee: nil)
+        Current.user = other_agent
+
+        expect { unassigned.update!(assignee: other_agent) }
+          .to change { unassigned.reload.assignee }.from(nil).to(other_agent)
       end
     end
   end

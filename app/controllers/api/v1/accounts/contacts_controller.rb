@@ -1,4 +1,5 @@
-class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
+class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController # rubocop:disable Metrics/ClassLength
+  include GroupChannelResolver
   include Sift
   sort_on :email, type: :string
   sort_on :name, internal_name: :order_on_name, type: :scope, scope_params: [:direction]
@@ -13,7 +14,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   before_action :check_authorization
   before_action :set_current_page, only: [:index, :active, :search, :filter]
-  before_action :fetch_contact, only: [:show, :update, :destroy, :avatar, :contactable_inboxes, :destroy_custom_attributes]
+  before_action :fetch_contact, only: [:show, :update, :destroy, :avatar, :contactable_inboxes, :destroy_custom_attributes, :sync_group]
   before_action :set_include_contact_inboxes, only: [:index, :active, :search, :filter, :show, :update]
 
   def index
@@ -82,11 +83,26 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     @contact.save!
   end
 
+  # Through the inbox the caller named, so a group that is in two of them is refreshed on
+  # the one the agent is looking at rather than on whichever came first, which can be a
+  # session that is not even connected.
+  def sync_group
+    authorize @contact, :sync_group?
+    raise ActionController::BadRequest, I18n.t('contacts.sync_group.not_a_group') if @contact.group_type_individual?
+    raise ActionController::BadRequest, I18n.t('contacts.sync_group.no_identifier') if @contact.identifier.blank?
+
+    Contacts::SyncGroupJob.perform_later(@contact, channel: channel)
+    head :accepted
+  end
+
   def create
     ActiveRecord::Base.transaction do
       @contact = Current.account.contacts.new(permitted_params.except(:avatar_url))
       @contact.save!
       @contact_inbox = build_contact_inbox
+      # Baileys phone normalization in the builder may merge @contact into an
+      # existing contact with the canonical phone; switch to the surviving record.
+      @contact = @contact_inbox.contact if @contact_inbox&.contact.present?
       process_avatar_from_url
     end
   end
@@ -166,7 +182,8 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     ContactInboxBuilder.new(
       contact: @contact,
       inbox: inbox,
-      source_id: params[:source_id]
+      source_id: params[:source_id],
+      validate_whatsapp_phone: true
     ).perform
   end
 

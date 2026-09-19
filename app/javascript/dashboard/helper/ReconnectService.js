@@ -48,11 +48,16 @@ class ReconnectService {
       page: 1,
       updatedWithin: null,
     });
+    // Page 1 REPLACES the list rather than merging into it. The merge only ever adds or replaces,
+    // so a conversation that left this tab while the socket was down would otherwise keep its
+    // stale copy on screen; replacing is what takes it off.
     await this.store.dispatch('fetchAllConversations', {
       replaceExisting: true,
     });
   };
 
+  // The store action applies the agent's sort itself, so page 1 here is page 1 of what they are
+  // looking at, and `replaceExisting` swaps the list for it instead of merging a stale one.
   fetchFilteredOrSavedConversations = async queryData => {
     try {
       await this.store.dispatch('fetchFilteredConversations', {
@@ -136,6 +141,8 @@ class ReconnectService {
   onReconnect = async () => {
     await this.handleRouteSpecificFetch();
     await this.revalidateCaches();
+    // Pin events that fired while the socket was down are lost, so the map is rebuilt from the server.
+    await this.store.dispatch('conversationPins/fetch');
     emitter.emit(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED);
   };
 }

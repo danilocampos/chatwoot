@@ -8,6 +8,7 @@ import EmptyState from '../../../../components/widgets/EmptyState.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import DuplicateInboxBanner from './channels/instagram/DuplicateInboxBanner.vue';
 import EmailInboxFinish from './channels/emailChannels/EmailInboxFinish.vue';
+import WhatsappLinkDeviceModal from './components/WhatsappLinkDeviceModal.vue';
 import WhatsappChannelAPI from 'dashboard/api/channel/whatsappChannel';
 import { useAlert } from 'dashboard/composables';
 import { useInbox } from 'dashboard/composables/useInbox';
@@ -29,9 +30,14 @@ const currentInbox = computed(() =>
   store.getters['inboxes/getInbox'](route.params.inbox_id)
 );
 
+const showLinkDeviceModal = reactive({
+  value: false,
+});
+
 // Use useInbox composable with the inbox ID
 const {
   isAWhatsAppCloudChannel,
+  isASessionWhatsAppChannel,
   isAWhatsAppChannel,
   isASmsInbox,
   isALineChannel,
@@ -68,8 +74,14 @@ const whatsappPhoneNumber = computed(() => {
   return (currentInbox.value?.phone_number || '').replace('whatsapp:', '');
 });
 
+// A session provider pairs the phone instead of receiving on a number Meta hands out, so the
+// wa.me QR would point customers at the agent's own device.
 const shouldShowWhatsAppQr = computed(() => {
-  return isAWhatsAppChannel.value && Boolean(whatsappPhoneNumber.value);
+  return (
+    isAWhatsAppChannel.value &&
+    !isASessionWhatsAppChannel.value &&
+    Boolean(whatsappPhoneNumber.value)
+  );
 });
 
 const shouldShowSmsQr = computed(() => {
@@ -98,6 +110,12 @@ const message = computed(() => {
   if (isALineChannel.value) {
     return `${t('INBOX_MGMT.FINISH.MESSAGE')}. ${t(
       'INBOX_MGMT.ADD.LINE_CHANNEL.API_CALLBACK.SUBTITLE'
+    )}`;
+  }
+
+  if (isASessionWhatsAppChannel.value) {
+    return `${t('INBOX_MGMT.FINISH.MESSAGE')}. ${t(
+      'INBOX_MGMT.ADD.WHATSAPP.EXTERNAL_PROVIDER.SUBTITLE'
     )}`;
   }
 
@@ -156,6 +174,13 @@ async function generateQRCodes() {
   }
 }
 
+const onOpenLinkDeviceModal = () => {
+  showLinkDeviceModal.value = true;
+};
+
+const onCloseLinkDeviceModal = () => {
+  showLinkDeviceModal.value = false;
+};
 async function retryWhatsAppWebhookSetup() {
   isRetryingWebhook.value = true;
   try {
@@ -232,6 +257,14 @@ watch(
             "
             @click="retryWhatsAppWebhookSetup"
           />
+        </div>
+        <div
+          v-if="isASessionWhatsAppChannel"
+          class="w-[50%] max-w-[50%] ml-[25%]"
+        >
+          <NextButton @click="onOpenLinkDeviceModal">
+            {{ $t('INBOX_MGMT.ADD.WHATSAPP.EXTERNAL_PROVIDER.LINK_BUTTON') }}
+          </NextButton>
         </div>
         <div class="w-[50%] max-w-[50%] ml-[25%]">
           <woot-code
@@ -358,5 +391,12 @@ watch(
         </div>
       </div>
     </EmptyState>
+    <WhatsappLinkDeviceModal
+      v-if="showLinkDeviceModal.value"
+      :show="showLinkDeviceModal.value"
+      :on-close="onCloseLinkDeviceModal"
+      :inbox="currentInbox"
+      is-setup
+    />
   </div>
 </template>

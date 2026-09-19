@@ -1,4 +1,6 @@
 class Whatsapp::Providers::WhatsappCloudContactInfoRequestService < Whatsapp::Providers::BaseService
+  include Whatsapp::GraphRequestOptions
+
   def self.perform(whatsapp_channel, identifier, message)
     new(whatsapp_channel: whatsapp_channel).perform(identifier, message)
   end
@@ -6,6 +8,7 @@ class Whatsapp::Providers::WhatsappCloudContactInfoRequestService < Whatsapp::Pr
   def perform(identifier, message)
     response = HTTParty.post(
       "#{phone_id_path}/messages",
+      **GRAPH_REQUEST_OPTIONS,
       headers: api_headers,
       body: {
         messaging_product: 'whatsapp',

@@ -30,6 +30,7 @@ const storeMock = {
     getAppliedConversationFiltersQuery: [],
     'customViews/getActiveConversationFolder': { query: {} },
     'notifications/getNotificationFilters': {},
+    getChatListFilters: { assigneeType: 'unassigned', status: 'open' },
   },
 };
 

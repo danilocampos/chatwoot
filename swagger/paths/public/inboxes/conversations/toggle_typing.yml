@@ -10,7 +10,11 @@ parameters:
     required: true
     schema:
       type: string
-    description: Typing status, either 'on' or 'off'
+      enum:
+        - 'on'
+        - 'recording'
+        - 'off'
+    description: Typing status.
 requestBody:
   required: true
   content:
@@ -20,7 +24,7 @@ requestBody:
         properties:
           typing_status:
             type: string
-            enum: ['on', 'off']
+            enum: ['on', 'recording', 'off']
             description: The typing status to set
             example: 'on'
 responses:

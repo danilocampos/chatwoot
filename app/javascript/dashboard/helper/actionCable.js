@@ -4,6 +4,7 @@ import DashboardAudioNotificationHelper from './AudioAlerts/DashboardAudioNotifi
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { useImpersonation } from 'dashboard/composables/useImpersonation';
+import { pendingGroupNavigation } from 'dashboard/helper/pendingGroupNavigation';
 import { useCallsStore } from 'dashboard/stores/calls';
 import {
   applyOutboundAnswer,
@@ -11,10 +12,17 @@ import {
   handleWhatsappRemoteEnd,
   isLocalWhatsappCall,
 } from 'dashboard/composables/useWhatsappCallSession';
+import { humanAssignee } from 'dashboard/store/modules/conversations/helpers';
 import { VOICE_CALL_PROVIDERS } from 'dashboard/helper/inbox';
 import { markCallDismissed, isLocalCall } from 'dashboard/helper/voice';
 import { VOICE_CALL_DIRECTION } from 'dashboard/components-next/message/constants';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { getUserPermissions } from 'dashboard/helper/permissionsHelper';
+import {
+  CONVERSATION_PARTICIPATING_PERMISSIONS,
+  CONVERSATION_UNASSIGNED_PERMISSIONS,
+  MANAGE_ALL_CONVERSATION_PERMISSIONS,
+} from 'dashboard/constants/permissions';
 
 const { isImpersonating } = useImpersonation();
 const UNREAD_COUNTS_REFETCH_THROTTLE_MS = 5000;
@@ -22,6 +30,12 @@ const FILTERED_UNREAD_COUNTS_REFRESH_RETRY_MS = 30000;
 const FILTERED_UNREAD_COUNTS_REFRESH_RETRY_JITTER_MS = 15000;
 const MENTION_UNREAD_COUNTS_REFETCH_DELAY_MS =
   UNREAD_COUNTS_REFETCH_THROTTLE_MS;
+// The only roles whose accessible set follows assignment. Everyone else, plain agents and administrators
+// included, sees by inbox membership, so no assignment can hide a conversation and later hand it back.
+const ASSIGNMENT_SCOPED_PERMISSIONS = [
+  CONVERSATION_UNASSIGNED_PERMISSIONS,
+  CONVERSATION_PARTICIPATING_PERMISSIONS,
+];
 const getFilteredUnreadCountsRefreshRetryDelay = () =>
   FILTERED_UNREAD_COUNTS_REFRESH_RETRY_MS +
   Math.random() * FILTERED_UNREAD_COUNTS_REFRESH_RETRY_JITTER_MS;
@@ -46,11 +60,15 @@ class ActionCableConnector extends BaseActionCableConnector {
       'assignee.changed': this.onAssigneeChanged,
       'conversation.typing_on': this.onTypingOn,
       'conversation.typing_off': this.onTypingOff,
+      'conversation.recording': this.onRecording,
       'conversation.contact_changed': this.onConversationContactChange,
       'presence.update': this.onPresenceUpdate,
       'contact.deleted': this.onContactDelete,
       'contact.updated': this.onContactUpdate,
+      'contact.group_synced': this.onContactGroupSynced,
       'conversation.mentioned': this.onConversationMentioned,
+      'conversation.pinned': this.onConversationPinned,
+      'conversation.unpinned': this.onConversationUnpinned,
       'notification.created': this.onNotificationCreated,
       'notification.deleted': this.onNotificationDeleted,
       'notification.updated': this.onNotificationUpdated,
@@ -59,8 +77,28 @@ class ActionCableConnector extends BaseActionCableConnector {
       'conversation.unread_count_changed':
         this.onConversationUnreadCountChanged,
       'account.cache_invalidated': this.onCacheInvalidate,
+      'inbox.provider_connection_updated':
+        this.onInboxProviderConnectionUpdated,
       'account.enrichment_completed': this.onEnrichmentCompleted,
       'copilot.message.created': this.onCopilotMessageCreated,
+      'scheduled_message.created': this.onScheduledMessageCreated,
+      'scheduled_message.updated': this.onScheduledMessageUpdated,
+      'scheduled_message.deleted': this.onScheduledMessageDeleted,
+      'recurring_scheduled_message.created':
+        this.onRecurringScheduledMessageCreated,
+      'recurring_scheduled_message.updated':
+        this.onRecurringScheduledMessageUpdated,
+      'recurring_scheduled_message.deleted':
+        this.onRecurringScheduledMessageDeleted,
+      'internal_chat.channel.updated': this.onInternalChatChannelUpdated,
+      'internal_chat.message.created': this.onInternalChatMessageCreated,
+      'internal_chat.message.updated': this.onInternalChatMessageUpdated,
+      'internal_chat.message.deleted': this.onInternalChatMessageDeleted,
+      'internal_chat.typing_on': this.onInternalChatTypingOn,
+      'internal_chat.typing_off': this.onInternalChatTypingOff,
+      'internal_chat.reaction.created': this.onInternalChatReactionCreated,
+      'internal_chat.reaction.deleted': this.onInternalChatReactionDeleted,
+      'internal_chat.poll.voted': this.onInternalChatPollVoted,
       'voice_call.incoming': this.onVoiceCallIncoming,
       'voice_call.accepted': this.onVoiceCallAccepted,
       'voice_call.outbound_connected': this.onVoiceCallOutboundConnected,
@@ -110,12 +148,54 @@ class ActionCableConnector extends BaseActionCableConnector {
     if (id) {
       this.app.$store.dispatch('updateConversation', payload);
     }
+    if (this.assignmentMayHaveGrantedAccess(payload)) {
+      this.app.$store.dispatch('conversationPins/fetch');
+    }
     this.fetchConversationStats();
+  };
+
+  // A custom role can scope what an agent sees down to the conversations assigned to them or left
+  // unassigned, so an assignment can hand back a conversation that was invisible when the pins were last
+  // read. The server then leads the list with a pin the client no longer knows about, and the client
+  // re-sorts it away as unpinned until the next reconnect. Being added as a participant grants access the
+  // same way but emits no event, so that path still waits for one.
+  assignmentMayHaveGrantedAccess = payload => {
+    const user = this.app.$store.getters.getCurrentUser;
+    const accountId = this.app.$store.getters.getCurrentAccountId;
+    const permissions = getUserPermissions(user, accountId);
+
+    // This event reaches every member of the inbox, and auto assignment fires it constantly, so it is only
+    // worth a request for the roles that can lose a conversation to an assignment in the first place.
+    // Manage-all is checked first because holding it says nothing on its own: the role editor adds both
+    // scoped permissions alongside it, and the backend reads it with precedence over them, so such a role
+    // sees by inbox membership like a plain agent does.
+    if (permissions.includes(MANAGE_ALL_CONVERSATION_PERMISSIONS)) return false;
+    if (!permissions.some(held => ASSIGNMENT_SCOPED_PERMISSIONS.includes(held)))
+      return false;
+
+    // The human, because the id being compared is an agent's: a bot's id comes from its own table
+    // and can be the same integer.
+    if (humanAssignee(payload)?.id === user?.id) return true;
+
+    // Whoever holds it, bot included: an unassigned-only role is scoped on the server by
+    // `conversations.unassigned`, which a bot-held conversation is not part of. Being handed to a
+    // bot takes access away rather than granting it, the same as being handed to another agent.
+    return (
+      !payload.meta?.assignee &&
+      permissions.includes(CONVERSATION_UNASSIGNED_PERMISSIONS)
+    );
   };
 
   onConversationCreated = data => {
     this.app.$store.dispatch('addConversation', data);
     this.fetchConversationStats();
+
+    const pendingJid = pendingGroupNavigation.consume();
+    if (pendingJid && data.meta?.sender?.identifier === pendingJid) {
+      emitter.emit(BUS_EVENTS.NAVIGATE_TO_GROUP, { conversationId: data.id });
+    } else if (pendingJid) {
+      pendingGroupNavigation.set(pendingJid);
+    }
   };
 
   onConversationRead = data => {
@@ -149,6 +229,10 @@ class ActionCableConnector extends BaseActionCableConnector {
   onConversationUpdated = data => {
     this.app.$store.dispatch('updateConversation', data);
     this.fetchConversationStats();
+  };
+
+  onScheduledMessageCreated = data => {
+    this.app.$store.dispatch('handleScheduledMessageCreated', data);
   };
 
   onConversationUnreadCountChanged = () => {
@@ -262,23 +346,54 @@ class ActionCableConnector extends BaseActionCableConnector {
     );
   };
 
-  onTypingOn = ({ conversation, user }) => {
-    const conversationId = conversation.id;
+  onScheduledMessageUpdated = data => {
+    this.app.$store.dispatch('handleScheduledMessageUpdated', data);
+  };
 
-    this.clearTimer(conversationId);
+  onScheduledMessageDeleted = data => {
+    this.app.$store.dispatch('handleScheduledMessageDeleted', data);
+  };
+
+  onRecurringScheduledMessageCreated = data => {
+    this.app.$store.dispatch('handleRecurringScheduledMessageCreated', data);
+  };
+
+  onRecurringScheduledMessageUpdated = data => {
+    this.app.$store.dispatch('handleRecurringScheduledMessageUpdated', data);
+  };
+
+  onRecurringScheduledMessageDeleted = data => {
+    this.app.$store.dispatch('handleRecurringScheduledMessageDeleted', data);
+  };
+
+  onTypingOn = ({ conversation, user }) => {
+    const timerKey = `${conversation.id}:${user.type}:${user.id}`;
+
+    this.clearTimer(timerKey);
     this.app.$store.dispatch('conversationTypingStatus/create', {
-      conversationId,
-      user,
+      conversationId: conversation.id,
+      user: { ...user, recording: false },
     });
-    this.initTimer({ conversation, user });
+    this.initTimer({ conversation, user, timerKey });
+  };
+
+  onRecording = ({ conversation, user }) => {
+    const timerKey = `${conversation.id}:${user.type}:${user.id}`;
+
+    this.clearTimer(timerKey);
+    this.app.$store.dispatch('conversationTypingStatus/create', {
+      conversationId: conversation.id,
+      user: { ...user, recording: true },
+    });
+    this.initTimer({ conversation, user, timerKey });
   };
 
   onTypingOff = ({ conversation, user }) => {
-    const conversationId = conversation.id;
+    const timerKey = `${conversation.id}:${user.type}:${user.id}`;
 
-    this.clearTimer(conversationId);
+    this.clearTimer(timerKey);
     this.app.$store.dispatch('conversationTypingStatus/destroy', {
-      conversationId,
+      conversationId: conversation.id,
       user,
     });
   };
@@ -288,19 +403,26 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.scheduleMentionUnreadCountsFetch();
   };
 
-  clearTimer = conversationId => {
-    const timerEvent = this.CancelTyping[conversationId];
+  onConversationPinned = data => {
+    this.app.$store.dispatch('conversationPins/add', data);
+  };
+
+  onConversationUnpinned = data => {
+    this.app.$store.dispatch('conversationPins/remove', data);
+  };
+
+  clearTimer = timerKey => {
+    const timerEvent = this.CancelTyping[timerKey];
 
     if (timerEvent) {
       clearTimeout(timerEvent);
-      this.CancelTyping[conversationId] = null;
+      this.CancelTyping[timerKey] = null;
     }
   };
 
-  initTimer = ({ conversation, user }) => {
-    const conversationId = conversation.id;
+  initTimer = ({ conversation, user, timerKey }) => {
     // Turn off typing automatically after 30 seconds
-    this.CancelTyping[conversationId] = setTimeout(() => {
+    this.CancelTyping[timerKey] = setTimeout(() => {
       this.onTypingOff({ conversation, user });
     }, 30000);
   };
@@ -319,6 +441,18 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   onContactUpdate = data => {
+    this.app.$store.dispatch('contacts/updateContact', data);
+  };
+
+  onContactGroupSynced = data => {
+    this.app.$store.dispatch('groupMembers/setGroupMembers', {
+      contactId: data.id,
+      members: data.group_members,
+      inboxPhoneNumber: data.inbox_phone_number,
+      ownMemberId: data.own_member_id,
+      isInboxAdmin: data.is_inbox_admin,
+      inboxId: data.inbox_id,
+    });
     this.app.$store.dispatch('contacts/updateContact', data);
   };
 
@@ -347,6 +481,10 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.app.$store.dispatch('labels/revalidate', { newKey: keys.label });
     this.app.$store.dispatch('inboxes/revalidate', { newKey: keys.inbox });
     this.app.$store.dispatch('teams/revalidate', { newKey: keys.team });
+    // Same reason as the unread counts below: which pins are visible follows the accessible set, so a
+    // regained role or custom role would otherwise leave a pinned conversation rendering as unpinned until
+    // the next reconnect. Inbox membership does not emit this event, so that path still waits for one.
+    this.app.$store.dispatch('conversationPins/fetch');
     this.app.$store.dispatch('revalidateCannedResponses', {
       newKey: keys.canned_response,
     });
@@ -356,6 +494,118 @@ class ActionCableConnector extends BaseActionCableConnector {
       // by filtered unread counts even when no conversation row changes.
       this.refreshConversationUnreadCountsWithFilteredRetry();
     }
+  };
+
+  onInboxProviderConnectionUpdated = data => {
+    this.app.$store.dispatch('inboxes/updateProviderConnection', {
+      id: data.inbox_id,
+      providerConnection: data.provider_connection,
+    });
+  };
+
+  onInternalChatMessageCreated = data => {
+    this.app.$store.dispatch('internalChat/messages/addMessageFromCable', {
+      channelId: data.internal_chat_channel_id,
+      message: data,
+    });
+    const channel = this.app.$store.getters['internalChat/getChannelById'](
+      data.internal_chat_channel_id
+    );
+    if (channel) {
+      const currentUserId = this.app.$store.getters.getCurrentUser?.id;
+      const isOwnMessage = data.sender?.id === currentUserId;
+      const activeChannelId =
+        this.app.$store.getters['internalChat/getActiveChannelId'];
+      const isActiveChannel = activeChannelId === data.internal_chat_channel_id;
+      const mentionedIds = data.content_attributes?.mentioned_user_ids || [];
+      const isMentioned = mentionedIds.includes(currentUserId);
+      this.app.$store.dispatch('internalChat/updateChannel', {
+        id: data.internal_chat_channel_id,
+        unread_count:
+          isActiveChannel || isOwnMessage
+            ? channel.unread_count || 0
+            : (channel.unread_count || 0) + 1,
+        has_unread_mention:
+          isActiveChannel || isOwnMessage
+            ? false
+            : channel.has_unread_mention || isMentioned,
+        last_activity_at: data.created_at,
+      });
+    }
+  };
+
+  onInternalChatMessageUpdated = data => {
+    this.app.$store.dispatch('internalChat/messages/updateMessageFromCable', {
+      channelId: data.internal_chat_channel_id,
+      message: data,
+    });
+  };
+
+  onInternalChatMessageDeleted = data => {
+    this.app.$store.dispatch('internalChat/messages/deleteMessageFromCable', {
+      channelId: data.internal_chat_channel_id,
+      messageId: data.id,
+    });
+  };
+
+  onInternalChatTypingOn = ({ channel, user }) => {
+    this.app.$store.dispatch('internalChatTypingStatus/create', {
+      channelId: channel.id,
+      user,
+    });
+  };
+
+  onInternalChatTypingOff = ({ channel, user }) => {
+    this.app.$store.dispatch('internalChatTypingStatus/destroy', {
+      channelId: channel.id,
+      user,
+    });
+  };
+
+  onInternalChatReactionCreated = data => {
+    this.app.$store.dispatch('internalChat/messages/addReactionFromCable', {
+      channelId: data.internal_chat_channel_id,
+      messageId: data.message_id,
+      reaction: data,
+    });
+  };
+
+  onInternalChatReactionDeleted = data => {
+    this.app.$store.dispatch('internalChat/messages/removeReactionFromCable', {
+      channelId: data.internal_chat_channel_id,
+      messageId: data.message_id,
+      reactionId: data.id,
+    });
+  };
+
+  onInternalChatChannelUpdated = data => {
+    const currentUserId = this.app.$store.getters.getCurrentUser?.id;
+    const memberIds = data.member_user_ids;
+
+    if (memberIds && currentUserId && data.channel_type === 'private_channel') {
+      if (!memberIds.includes(currentUserId)) {
+        // Current user was removed from channel
+        this.app.$store.commit('internalChat/DELETE_CHANNEL', data.id);
+        return;
+      }
+      // Current user was added: if channel not in store, refetch channels
+      const existing = this.app.$store.getters['internalChat/getChannelById'](
+        data.id
+      );
+      if (!existing) {
+        this.app.$store.dispatch('internalChat/get');
+        return;
+      }
+    }
+
+    this.app.$store.dispatch('internalChat/updateChannel', data);
+  };
+
+  onInternalChatPollVoted = data => {
+    this.app.$store.dispatch('internalChat/polls/updatePollFromCable', {
+      channelId: data.internal_chat_channel_id,
+      poll: data,
+    });
   };
 
   onVoiceCallIncoming = data => {

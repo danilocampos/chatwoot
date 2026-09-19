@@ -15,6 +15,14 @@ describe AutomationRuleListener do
   let(:user_1) { create(:user, role: 0) }
   let(:user_2) { create(:user, role: 0) }
 
+  # The mailer is parameterized with the account, so the expectation belongs on whatever .with
+  # returns rather than on the class.
+  def team_mailer_for(account)
+    mailer = TeamNotifications::AutomationNotificationMailer.with(account: account)
+    allow(TeamNotifications::AutomationNotificationMailer).to receive(:with).with(account: account).and_return(mailer)
+    mailer
+  end
+
   before do
     create(:custom_attribute_definition,
            attribute_key: 'customer_type',
@@ -125,7 +133,7 @@ describe AutomationRuleListener do
       it 'triggers automation rule send message to the contacts' do
         expect(conversation.messages).to be_empty
 
-        expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation)
+        expect(team_mailer_for(account)).to receive(:conversation_creation)
 
         listener.conversation_updated(event)
 
@@ -246,7 +254,7 @@ describe AutomationRuleListener do
       it 'triggers automation rule send email to the team' do
         message_delivery = instance_double(ActionMailer::MessageDelivery)
 
-        expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation).with(
+        expect(team_mailer_for(account)).to receive(:conversation_creation).with(
           conversation, team,
           'Please pay attention to this conversation, its from high priority customer'
         ).and_return(message_delivery)
@@ -257,7 +265,7 @@ describe AutomationRuleListener do
 
       it 'triggers automation rule send message to the contacts' do
         expect(conversation.messages).to be_empty
-        expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation)
+        expect(team_mailer_for(account)).to receive(:conversation_creation)
         listener.conversation_updated(event)
         conversation.reload
 
@@ -331,7 +339,7 @@ describe AutomationRuleListener do
             }.with_indifferent_access
           ]
         )
-        conversation.update(status: :snoozed)
+        conversation.update!(status: :snoozed)
       end
 
       let!(:event) do
@@ -351,7 +359,7 @@ describe AutomationRuleListener do
         end
 
         it 'triggers automation rule to assign team with OR operator' do
-          conversation.update(status: :open)
+          conversation.update!(status: :open)
           automation_rule.update!(
             conditions: [
               {
@@ -380,7 +388,7 @@ describe AutomationRuleListener do
 
       context 'when rule doesnt match' do
         it 'when automation rule is triggered it will not assign team' do
-          conversation.update(status: :open)
+          conversation.update!(status: :open)
 
           expect(conversation.team_id).not_to eq(team.id)
 
@@ -391,7 +399,7 @@ describe AutomationRuleListener do
         end
 
         it 'when automation rule is triggers, it will not assign team on attribute_changed values' do
-          conversation.update(status: :snoozed)
+          conversation.update!(status: :snoozed)
           event = Events::Base.new('conversation_updated', Time.zone.now, { conversation: conversation,
                                                                             changed_attributes: { company_name: %w[Marvel DC] } })
 
@@ -441,7 +449,7 @@ describe AutomationRuleListener do
       it 'triggers automation rule send email to the team' do
         message_delivery = instance_double(ActionMailer::MessageDelivery)
 
-        expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation).with(
+        expect(team_mailer_for(account)).to receive(:conversation_creation).with(
           conversation, team,
           'Please pay attention to this conversation, its from high priority customer'
         ).and_return(message_delivery)
@@ -452,7 +460,7 @@ describe AutomationRuleListener do
 
       it 'triggers automation rule send message to the contacts' do
         expect(conversation.messages).to be_empty
-        expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation)
+        expect(team_mailer_for(account)).to receive(:conversation_creation)
         listener.conversation_opened(event)
         conversation.reload
 
@@ -482,7 +490,7 @@ describe AutomationRuleListener do
 
     it 'triggers automation rule on contains filter' do
       expect(conversation.labels).to eq([])
-      expect(TeamNotifications::AutomationNotificationMailer).to receive(:conversation_creation)
+      expect(team_mailer_for(account)).to receive(:conversation_creation)
       listener.message_created(event)
       conversation.reload
 

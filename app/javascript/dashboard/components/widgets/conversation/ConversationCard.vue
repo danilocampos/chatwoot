@@ -8,6 +8,7 @@ import InboxName from '../InboxName.vue';
 import TimeAgo from 'dashboard/components/ui/TimeAgo.vue';
 import CardLabels from './conversationCardComponents/CardLabels.vue';
 import CardPriorityIcon from 'dashboard/components-next/Conversation/ConversationCard/CardPriorityIcon.vue';
+import CardPinIcon from 'dashboard/components-next/Conversation/ConversationCard/CardPinIcon.vue';
 import UnreadBadge from 'dashboard/components-next/Conversation/ConversationCard/UnreadBadge.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
 import VoiceCallStatus from './VoiceCallStatus.vue';
@@ -24,6 +25,9 @@ const props = defineProps({
   showInboxName: { type: Boolean, default: false },
   hideThumbnail: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
+  typingPreview: { type: String, default: '' },
+  hasGroupActivity: { type: Boolean, default: false },
+  isPinned: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -36,19 +40,16 @@ const emit = defineEmits([
 const hovered = ref(false);
 
 const unreadCount = computed(() => props.chat.unread_count);
-const hasUnread = computed(() => unreadCount.value > 0);
+const hasUnread = computed(
+  () => unreadCount.value > 0 || props.hasGroupActivity
+);
+const isAnyoneTyping = computed(() => !!props.typingPreview);
 const lastMessageInChat = computed(() => getLastMessage(props.chat));
 
-const voiceCallData = computed(() => {
-  const last = lastMessageInChat.value;
-  if (last?.content_type !== 'voice_call' || !last.call) {
-    return { status: null, direction: null };
-  }
-  return {
-    status: last.call.status,
-    direction: last.call.direction === 'outgoing' ? 'outbound' : 'inbound',
-  };
-});
+const voiceCallData = computed(() => ({
+  status: props.chat.additional_attributes?.call_status,
+  direction: props.chat.additional_attributes?.call_direction,
+}));
 
 const showMetaSection = computed(() => {
   return (
@@ -70,13 +71,15 @@ const showLabelsSection = computed(() => {
   return props.chat.labels?.length > 0 || hasSlaPolicyId.value;
 });
 
-const messagePreviewClass = computed(() => {
-  return [
-    hasUnread.value ? 'font-medium text-n-slate-12' : 'text-n-slate-11',
-    !props.compact && hasUnread.value ? 'ltr:pr-4 rtl:pl-4' : '',
-    props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
-  ];
-});
+const messagePreviewPaddingClass = computed(() => [
+  !props.compact && hasUnread.value ? 'ltr:pr-4 rtl:pl-4' : '',
+  props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
+]);
+
+const messagePreviewClass = computed(() => [
+  hasUnread.value ? 'font-medium text-n-slate-12' : 'text-n-slate-11',
+  ...messagePreviewPaddingClass.value,
+]);
 
 const onThumbnailHover = () => {
   hovered.value = !props.hideThumbnail;
@@ -90,7 +93,7 @@ const onSelectConversation = checked => {
   if (checked) {
     emit('selectConversation', props.chat.id, props.inbox.id);
   } else {
-    emit('deSelectConversation', props.chat.id, props.inbox.id);
+    emit('deSelectConversation', props.chat.id);
   }
 };
 
@@ -191,6 +194,14 @@ watch(
         :direction="voiceCallData.direction"
         :message-preview-class="messagePreviewClass"
       />
+      <p
+        v-else-if="isAnyoneTyping"
+        key="typing-preview"
+        class="text-green-500 text-sm font-medium my-0 mx-2 leading-6 h-6 flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+        :class="messagePreviewPaddingClass"
+      >
+        {{ typingPreview }}
+      </p>
       <MessagePreview
         v-else-if="lastMessageInChat"
         key="message-preview"
@@ -225,10 +236,15 @@ watch(
           />
         </span>
         <UnreadBadge
-          v-if="hasUnread"
+          v-if="unreadCount > 0"
           :count="unreadCount"
           class="ltr:ml-auto rtl:mr-auto mt-1"
         />
+        <span
+          v-else-if="hasGroupActivity"
+          class="shadow-lg rounded-full ltr:ml-auto rtl:mr-auto mt-1 size-2 bg-n-teal-9"
+        />
+        <CardPinIcon v-if="isPinned" class="ltr:ml-auto rtl:mr-auto mt-1" />
       </div>
       <CardLabels
         v-if="showLabelsSection"

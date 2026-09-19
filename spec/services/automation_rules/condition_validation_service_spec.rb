@@ -11,9 +11,29 @@ RSpec.describe AutomationRules::ConditionValidationService do
           { 'values': ['open'], 'attribute_key': 'status', 'query_operator': nil, 'filter_operator': 'equal_to' },
           { 'values': ['+918484'], 'attribute_key': 'phone_number', 'query_operator': 'OR', 'filter_operator': 'contains' },
           { 'values': ['test'], 'attribute_key': 'email', 'query_operator': 'OR', 'filter_operator': 'contains' },
-          { 'values': [true], 'attribute_key': 'private_note', 'query_operator': nil, 'filter_operator': 'equal_to' }
+          { 'values': [true], 'attribute_key': 'private_note', 'query_operator': 'OR', 'filter_operator': 'equal_to' },
+          { 'values': [1], 'attribute_key': 'sender_id', 'query_operator': 'OR', 'filter_operator': 'not_equal_to' },
+          { 'values': ['User'], 'attribute_key': 'sender_type', 'query_operator': nil, 'filter_operator': 'equal_to' }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
+      end
+
+      it 'returns true' do
+        expect(described_class.new(rule).perform).to be(true)
+      end
+    end
+
+    context 'with an account attribute that shares its name with a message attribute' do
+      before do
+        create(:custom_attribute_definition, attribute_key: 'sender_id', account: account,
+                                             attribute_model: 'conversation_attribute', attribute_display_type: 'text')
+        # `contains` is not a valid operator for the sender_id message key, so validating against it
+        # would reject a condition that is about the account attribute.
+        rule.conditions = [
+          { 'values': ['crm'], 'attribute_key': 'sender_id', 'query_operator': nil,
+            'filter_operator': 'contains', 'custom_attribute_type': 'conversation_attribute' }
+        ]
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns true' do
@@ -26,7 +46,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
         rule.conditions = [
           { 'values': ['open'], 'attribute_key': 'not-a-standard-attribute-for-sure', 'query_operator': nil, 'filter_operator': 'equal_to' }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns false' do
@@ -39,7 +59,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
         rule.conditions = [
           { 'values': ['open'], 'attribute_key': 'status', 'query_operator': nil, 'filter_operator': 'not-a-filter-operator' }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns false' do
@@ -50,7 +70,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
     context 'with wrong query operator' do
       before do
         rule.conditions = [{ 'values': ['open'], 'attribute_key': 'status', 'query_operator': 'invalid', 'filter_operator': 'attribute_changed' }]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns false' do
@@ -63,7 +83,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
         rule.conditions = [
           { 'values': ['open'], 'attribute_key': 'status', 'query_operator': nil, 'filter_operator': 'attribute_changed' }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns true' do
@@ -88,7 +108,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
             'custom_attribute_type': 'conversation_attribute'
           }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns true' do
@@ -106,7 +126,7 @@ RSpec.describe AutomationRules::ConditionValidationService do
             'custom_attribute_type': 'conversation_attribute'
           }
         ]
-        rule.save
+        rule.save # rubocop:disable Rails/SaveBang
       end
 
       it 'returns false for missing custom attribute' do

@@ -2,59 +2,68 @@
 #
 # Table name: conversations
 #
-#  id                     :integer          not null, primary key
-#  additional_attributes  :jsonb
-#  ai_assignee_type       :string
-#  agent_last_seen_at     :datetime
-#  assignee_last_seen_at  :datetime
-#  cached_label_list      :text
-#  contact_last_seen_at   :datetime
-#  custom_attributes      :jsonb
-#  first_reply_created_at :datetime
-#  identifier             :string
-#  last_activity_at       :datetime         not null
-#  priority               :integer
-#  snoozed_until          :datetime
-#  status                 :integer          default("open"), not null
-#  status_changed_at      :datetime
-#  uuid                   :uuid             not null
-#  waiting_since          :datetime
-#  created_at             :datetime         not null
-#  updated_at             :datetime         not null
-#  account_id             :integer          not null
-#  assignee_agent_bot_id  :bigint
-#  assignee_id            :integer
-#  campaign_id            :bigint
-#  contact_id             :bigint
-#  contact_inbox_id       :bigint
-#  display_id             :integer          not null
-#  inbox_id               :integer          not null
-#  sla_policy_id          :bigint
-#  team_id                :bigint
+#  id                         :integer          not null, primary key
+#  additional_attributes      :jsonb
+#  agent_last_seen_at         :datetime
+#  ai_assignee_type           :string
+#  assignee_last_seen_at      :datetime
+#  cached_label_list          :text
+#  contact_last_seen_at       :datetime
+#  custom_attributes          :jsonb
+#  first_reply_created_at     :datetime
+#  group_type                 :integer          default("individual"), not null
+#  identifier                 :string
+#  last_activity_at           :datetime         not null
+#  priority                   :integer
+#  snoozed_until              :datetime
+#  status                     :integer          default("open"), not null
+#  status_changed_at          :datetime
+#  uuid                       :uuid             not null
+#  waiting_since              :datetime
+#  created_at                 :datetime         not null
+#  updated_at                 :datetime         not null
+#  account_id                 :integer          not null
+#  assignee_agent_bot_id      :bigint
+#  assignee_id                :integer
+#  campaign_id                :bigint
+#  contact_id                 :bigint           not null
+#  contact_inbox_id           :bigint
+#  display_id                 :integer          not null
+#  inbox_id                   :integer          not null
+#  redirect_origin_display_id :integer
+#  sla_policy_id              :bigint
+#  team_id                    :bigint
 #
 # Indexes
 #
-#  conv_acid_inbid_stat_asgnid_idx                    (account_id,inbox_id,status,assignee_id)
-#  index_conversations_on_account_id                  (account_id)
-#  index_conversations_on_account_id_and_display_id   (account_id,display_id) UNIQUE
-#  index_conversations_on_assignee_id_and_account_id  (assignee_id,account_id)
-#  index_conversations_on_campaign_id                 (campaign_id)
-#  index_conversations_on_contact_id                  (contact_id)
-#  index_conversations_on_contact_inbox_id            (contact_inbox_id)
-#  index_conversations_on_created_at                  (created_at)
-#  index_conversations_on_first_reply_created_at      (first_reply_created_at)
-#  index_conversations_on_id_and_account_id           (account_id,id)
-#  index_conversations_on_identifier_and_account_id   (identifier,account_id)
-#  index_conversations_on_inbox_id                    (inbox_id)
-#  index_conversations_on_priority                    (priority)
-#  index_conversations_on_status_and_account_id       (status,account_id)
-#  index_conversations_on_status_and_priority         (status,priority)
-#  index_conversations_on_team_id                     (team_id)
-#  index_conversations_on_uuid                        (uuid) UNIQUE
-#  index_conversations_on_waiting_since               (waiting_since)
+#  conv_acid_inbid_stat_asgnid_idx                      (account_id,inbox_id,status,assignee_id)
+#  index_conversations_on_account_id                    (account_id)
+#  index_conversations_on_account_id_and_display_id     (account_id,display_id) UNIQUE
+#  index_conversations_on_account_id_and_group_type     (account_id,group_type)
+#  index_conversations_on_account_id_status_created_at  (account_id,status,created_at)
+#  index_conversations_on_assignee_id_and_account_id    (assignee_id,account_id)
+#  index_conversations_on_campaign_id                   (campaign_id)
+#  index_conversations_on_contact_id                    (contact_id)
+#  index_conversations_on_contact_inbox_id              (contact_inbox_id)
+#  index_conversations_on_created_at                    (created_at)
+#  index_conversations_on_first_reply_created_at        (first_reply_created_at)
+#  index_conversations_on_id_and_account_id             (account_id,id)
+#  index_conversations_on_identifier_and_account_id     (identifier,account_id)
+#  index_conversations_on_inbox_id                      (inbox_id)
+#  index_conversations_on_inbox_id_and_group_type       (inbox_id,group_type)
+#  index_conversations_on_priority                      (priority)
+#  index_conversations_on_status_and_account_id         (status,account_id)
+#  index_conversations_on_status_and_priority           (status,priority)
+#  index_conversations_on_team_id                       (team_id)
+#  index_conversations_on_uuid                          (uuid) UNIQUE
+#  index_conversations_on_waiting_since                 (waiting_since)
+#
+# Foreign Keys
+#
 #
 
 class Conversation < ApplicationRecord
+  include JsonColumnMerge
   include Labelable
   include LlmFormattable
   include AssignmentHandler
@@ -85,6 +94,7 @@ class Conversation < ApplicationRecord
 
   enum status: { open: 0, resolved: 1, pending: 2, snoozed: 3 }
   enum priority: { low: 0, medium: 1, high: 2, urgent: 3 }
+  enum group_type: { individual: 0, group: 1 }, _prefix: true
 
   scope :unassigned, -> { where(assignee_id: nil, assignee_agent_bot_id: nil) }
   scope :assigned, -> { where.not(assignee_id: nil).or(where.not(assignee_agent_bot_id: nil)) }
@@ -102,6 +112,18 @@ class Conversation < ApplicationRecord
     return none if auto_resolve_after.to_i.zero?
 
     open.where('last_activity_at < ?', Time.now.utc - auto_resolve_after.minutes)
+  }
+
+  # Puts the conversations the given user pinned first, most recently pinned on top. The join is kept as a
+  # literal SQL string (with the table name spelled out in the ON clause) so Rails does not promote it to an
+  # eager load, and the unique index on [user_id, conversation_id] keeps it 1:0..1, so no row is duplicated.
+  scope :pinned_first_for, lambda { |user|
+    joins(
+      sanitize_sql_array(
+        ['LEFT OUTER JOIN conversation_pins ON conversation_pins.conversation_id = conversations.id AND conversation_pins.user_id = ?',
+         user.id]
+      )
+    ).order(Arel.sql('conversation_pins.created_at DESC NULLS LAST'))
   }
 
   scope :last_user_message_at, lambda {
@@ -128,9 +150,12 @@ class Conversation < ApplicationRecord
   has_many :messages, dependent: :destroy_async, autosave: true
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :conversation_participants, dependent: :destroy_async
+  has_many :conversation_pins, dependent: :destroy_async
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
   has_many :attachments, through: :messages
   has_many :reporting_events, dependent: :destroy_async
+  has_many :scheduled_messages, dependent: :destroy
+  has_many :recurring_scheduled_messages, dependent: :destroy
   has_many :automation_rule_pending_executions, dependent: :delete_all
 
   before_save :ensure_snooze_until_reset
@@ -168,20 +193,62 @@ class Conversation < ApplicationRecord
     messages.where(account_id: account_id)&.incoming&.last
   end
 
+  # Seeds `currentChat.messages` in the dashboard AND doubles as the `before`
+  # cursor in setActiveChat → fetchPreviousMessages, where MessageFinder pages
+  # with `id < before`. It must therefore be the newest message the dashboard
+  # renders. Filtering by `message_type` or `private` here silently hides every
+  # message created after the one we pick — that is how activity messages
+  # ("Conversation was marked resolved by ...") vanished from the history.
+  # Chat list previews use `last_non_activity_message`: keep the two separate.
+  # Agent-facing payloads only — the cable broadcast reaches the contact too and
+  # keeps its own narrower query (see EventDataPresenter#push_messages).
+  # The `id` tie-break is load-bearing: pagination compares ids, so on a
+  # `created_at` tie the cursor has to be the highest id or the rows between
+  # them fall through the same crack. Imports write second-precision
+  # timestamps in bulk (DataImports::Intercom::Importer), so ties are real.
+  def dashboard_seed_message
+    messages.where(account_id: account_id)
+            .hide_removed_reactions
+            .includes([{ attachments: [{ file_attachment: [:blob] }] }])
+            .reorder(created_at: :desc, id: :desc)
+            .first
+  end
+
+  # Drives the chat list preview, which must never read "Conversation was
+  # marked resolved by ...". Unlike `dashboard_seed_message`, skipping activity
+  # messages here is intentional.
+  def last_non_activity_message
+    messages.where(account_id: account_id)
+            .non_activity_messages
+            .hide_removed_reactions
+            .includes([{ attachments: [{ file_attachment: [:blob] }] }])
+            .reorder(created_at: :desc, id: :desc)
+            .first
+  end
+
   def toggle_status
     # FIXME: implement state machine with aasm
-    self.status = open? ? :resolved : :open
-    self.status = :open if pending? || snoozed?
-    save
+    self.status = toggled_status
+    save # rubocop:disable Rails/SaveBang
+  end
+
+  # The status a toggle lands on, without writing it. Callers that have another
+  # change to make in the same save need this: `previous_changes` only carries
+  # the last save, and every status callback reads `saved_change_to_status?`
+  # from it.
+  def toggled_status
+    return :open if pending? || snoozed?
+
+    open? ? :resolved : :open
   end
 
   def toggle_priority(priority = nil)
     self.priority = priority.presence
-    save
+    save!
   end
 
   def bot_handoff!(dispatch_event: true)
-    update(waiting_since: Time.current) if waiting_since.blank?
+    update!(waiting_since: Time.current) if waiting_since.blank?
     self.ai_assignee = nil
     open!
     dispatch_bot_handoff_event if dispatch_event
@@ -259,14 +326,15 @@ class Conversation < ApplicationRecord
     "#{ENV.fetch('FRONTEND_URL', nil)}/survey/responses/#{uuid}"
   end
 
-  def dispatch_conversation_updated_event(previous_changes = nil)
-    dispatcher_dispatch(CONVERSATION_UPDATED, previous_changes)
+  def dispatch_conversation_updated_event(previous_changes = nil, broadcast_metadata: nil)
+    dispatcher_dispatch(CONVERSATION_UPDATED, previous_changes, broadcast_metadata: broadcast_metadata)
   end
 
   private
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
+    unpin_for_everyone_on_resolve
     notify_status_change
     create_activity
     invalidate_filtered_unread_count_conversation
@@ -280,6 +348,13 @@ class Conversation < ApplicationRecord
     # rubocop:disable Rails/SkipsModelValidations
     update_column(:waiting_since, nil)
     # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  # A resolved conversation leaves the agent's open list, so it should not keep occupying one of their pin slots.
+  def unpin_for_everyone_on_resolve
+    return unless saved_change_to_status? && resolved?
+
+    conversation_pins.destroy_all
   end
 
   def ensure_snooze_until_reset
@@ -340,9 +415,14 @@ class Conversation < ApplicationRecord
     dispatch_conversation_updated_event(previous_changes)
   end
 
+  # Every key here answers the same question: does a consumer of this conversation need to be TOLD
+  # when it changes? `redirect_origin_display_id` does, and only this list can say so. The pairing is
+  # written on an existing conversation whenever a message-less redirect token resumes one, and that
+  # write carries no message and creates nothing, so without an event of its own the change is
+  # invisible and the consumer keeps acting on the previous episode's origin (fazer-ai/agents#222).
   def list_of_keys
     %w[team_id assignee_id assignee_agent_bot_id ai_assignee_type status snoozed_until custom_attributes label_list waiting_since
-       first_reply_created_at priority]
+       first_reply_created_at priority redirect_origin_display_id]
   end
 
   def allowed_keys?
@@ -386,10 +466,11 @@ class Conversation < ApplicationRecord
     end
   end
 
-  def dispatcher_dispatch(event_name, changed_attributes = nil)
-    Rails.configuration.dispatcher.dispatch(event_name, Time.zone.now, conversation: self, notifiable_assignee_change: notifiable_assignee_change?,
-                                                                       changed_attributes: changed_attributes,
-                                                                       performed_by: Current.executed_by)
+  def dispatcher_dispatch(event_name, changed_attributes = nil, broadcast_metadata: nil)
+    payload = { conversation: self, notifiable_assignee_change: notifiable_assignee_change?,
+                changed_attributes: changed_attributes, performed_by: Current.executed_by }
+    payload[:broadcast_metadata] = broadcast_metadata unless broadcast_metadata.nil?
+    Rails.configuration.dispatcher.dispatch(event_name, Time.zone.now, **payload)
   end
 
   def set_unread_count_deletion_data
@@ -405,8 +486,9 @@ class Conversation < ApplicationRecord
 
   def conversation_status_changed_to_open?
     return false unless open?
+
     # saved_change_to_status? method only works in case of update
-    return true if previous_changes.key?(:id) || saved_change_to_status?
+    true if previous_changes.key?(:id) || saved_change_to_status?
   end
 
   def create_label_change(user_name)

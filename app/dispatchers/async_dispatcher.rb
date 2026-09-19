@@ -15,11 +15,13 @@ class AsyncDispatcher < BaseDispatcher
       CsatSurveyListener.instance,
       HookListener.instance,
       InstallationWebhookListener.instance,
+      InternalChatListener.instance,
       NotificationListener.instance,
       ParticipationListener.instance,
       Conversations::UnreadCounts::Listener.instance,
       ReportingEventListener.instance,
-      WebhookListener.instance
+      WebhookListener.instance,
+      ChannelListener.instance
     ]
   end
 end

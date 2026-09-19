@@ -20,7 +20,6 @@ by providing a `content_for(:javascript)` block.
   <% end %>
 <% end %>
 
-<% if ChatwootHub.support_config.values_at(:support_website_token, :support_script_url).all?(&:present?) %>
 <script>
 window.chatwootSettings = {
   hideMessageBubble: true,
@@ -49,4 +48,3 @@ window.addEventListener('chatwoot:ready', function() {
 })
 
 </script>
-<% end %>

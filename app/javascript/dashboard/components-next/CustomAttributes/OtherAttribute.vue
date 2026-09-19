@@ -4,6 +4,7 @@ import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
+import { vOnClickOutside } from '@vueuse/components';
 import { isValidURL } from 'dashboard/helper/URLHelper.js';
 import { getRegexp } from 'shared/helpers/Validators';
 
@@ -26,6 +27,7 @@ const emit = defineEmits(['update', 'delete']);
 const { t } = useI18n();
 const isEditingValue = ref(false);
 const editedValue = ref(props.attribute.value || '');
+const initialEditValue = ref('');
 
 const isAttributeTypeLink = computed(
   () => props.attribute.attributeDisplayType === 'link'
@@ -105,6 +107,7 @@ const toggleEditValue = value => {
   if (isEditingValue.value) {
     v$.value.$reset();
     editedValue.value = props.attribute.value || '';
+    initialEditValue.value = editedValue.value;
   }
 };
 
@@ -114,6 +117,14 @@ const handleInputUpdate = async () => {
 
   emit('update', editedValue.value);
   toggleEditValue(false);
+};
+
+const handleClickOutside = () => {
+  if (editedValue.value === initialEditValue.value) {
+    toggleEditValue(false);
+    return;
+  }
+  handleInputUpdate();
 };
 </script>
 
@@ -179,7 +190,7 @@ const handleInputUpdate = async () => {
 
     <div
       v-if="isEditingValue"
-      v-on-clickaway="() => toggleEditValue(false)"
+      v-on-click-outside="handleClickOutside"
       class="flex items-center w-full"
     >
       <Input

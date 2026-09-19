@@ -33,7 +33,7 @@ export default {
   },
   data() {
     return {
-      hasOpenedAtleastOnce: false,
+      hasOpenedAtleastOnce: this.isVisible,
       iframeLoading: true,
       currentTheme: getCurrentTheme(),
       themeObserver: null,

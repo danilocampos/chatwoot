@@ -53,8 +53,10 @@ export const FEATURE_FLAGS = {
   COMPANIES: 'companies',
   ADVANCED_SEARCH: 'advanced_search',
   CONVERSATION_REQUIRED_ATTRIBUTES: 'conversation_required_attributes',
+  INTERNAL_CHAT: 'internal_chat',
   CONVERSATION_UNREAD_COUNTS: 'conversation_unread_counts',
   UNREAD_COUNT_FOR_FILTERS: 'unread_count_for_filters',
+  BRANDED_EMAIL_TEMPLATES: 'branded_email_templates',
 };
 
 export const PREMIUM_FEATURES = [

@@ -3,9 +3,8 @@ import { ref, computed } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { required, requiredIf } from '@vuelidate/validators';
 import { INBOX_TYPES, isVoiceCallEnabled } from 'dashboard/helper/inbox';
+import { isSessionProvider } from 'dashboard/helper/whatsappSession';
 import {
-  appendSignature,
-  removeSignature,
   getEffectiveChannelType,
   stripUnsupportedMarkdown,
 } from 'dashboard/helper/editorHelper';
@@ -13,6 +12,7 @@ import {
   buildContactableInboxesList,
   prepareNewMessagePayload,
   prepareWhatsAppMessagePayload,
+  splitAttachmentsForChannel,
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
 import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
@@ -41,6 +41,7 @@ const props = defineProps({
   contactsUiFlags: { type: Object, default: null },
   messageSignature: { type: String, default: '' },
   sendWithSignature: { type: Boolean, default: false },
+  signatureSettings: { type: Object, default: null },
   formState: { type: Object, required: true },
 });
 
@@ -77,6 +78,9 @@ const inboxTypes = computed(() => ({
   isEmail: props.targetInbox?.channelType === INBOX_TYPES.EMAIL,
   isTwilio: props.targetInbox?.channelType === INBOX_TYPES.TWILIO,
   isWhatsapp: props.targetInbox?.channelType === INBOX_TYPES.WHATSAPP,
+  isWhatsappSession:
+    props.targetInbox?.channelType === INBOX_TYPES.WHATSAPP &&
+    isSessionProvider(props.targetInbox?.provider),
   isWebWidget: props.targetInbox?.channelType === INBOX_TYPES.WEB,
   isApi: props.targetInbox?.channelType === INBOX_TYPES.API,
   isEmailOrWebWidget:
@@ -98,18 +102,25 @@ const whatsappMessageTemplates = computed(() =>
 
 const inboxChannelType = computed(() => props.targetInbox?.channelType || '');
 
-const inboxMedium = computed(() => props.targetInbox?.medium || '');
-
 const voiceCallEnabled = computed(() => isVoiceCallEnabled(props.targetInbox));
 
-const effectiveChannelType = computed(() =>
-  getEffectiveChannelType(inboxChannelType.value, inboxMedium.value)
-);
-
+// Template-based WhatsApp flows (Cloud, Twilio) compose the content from the
+// template, so `message` stays optional there. Free-form WhatsApp providers
+// (Baileys, Z-API) send exactly what the form holds: without text nor an
+// attachment the backend would create an empty message that the provider
+// flags as unsupported, so require one of them.
 const validationRules = computed(() => ({
   selectedContact: { required },
   targetInbox: { required },
-  message: { required: requiredIf(!inboxTypes.value.isWhatsapp) },
+  message: {
+    required: requiredIf(() => {
+      if (!inboxTypes.value.isWhatsapp) return true;
+      if (inboxTypes.value.isWhatsappSession) {
+        return state.attachedFiles.length === 0;
+      }
+      return false;
+    }),
+  },
   subject: { required: requiredIf(inboxTypes.value.isEmail) },
 }));
 
@@ -128,9 +139,17 @@ const validationStates = computed(() => ({
   isMessageInvalid: v$.value.message.$dirty && v$.value.message.$invalid,
 }));
 
+// On a channel that carries one attachment per message, only the first file travels
+// with the conversation; the rest follow it as their own messages, which is what the
+// reply box already does. Without the split every file shows in Chatwoot and one
+// reaches the contact.
 const newMessagePayload = () => {
   const { message, subject, ccEmails, bccEmails, attachedFiles } = state;
-  return prepareNewMessagePayload({
+  const { first, rest } = splitAttachmentsForChannel({
+    targetInbox: props.targetInbox,
+    attachedFiles,
+  });
+  const payload = prepareNewMessagePayload({
     targetInbox: props.targetInbox,
     selectedContact: props.selectedContact,
     message,
@@ -138,9 +157,13 @@ const newMessagePayload = () => {
     ccEmails,
     bccEmails,
     currentUser: props.currentUser,
-    attachedFiles,
+    attachedFiles: first,
     directUploadsEnabled: props.isDirectUploadsEnabled,
+    sendWithSignature: props.sendWithSignature,
+    messageSignature: props.messageSignature,
+    signatureSettings: props.signatureSettings,
   });
+  return { payload, followUpFiles: rest };
 };
 
 const contactableInboxesList = computed(() => {
@@ -222,22 +245,9 @@ const handleInboxAction = ({ value, action, channelType, medium, ...rest }) => {
   state.attachedFiles = [];
 };
 
-const removeSignatureFromMessage = () => {
-  // Always remove the signature from message content when inbox/contact is removed
-  // to ensure no leftover signature content remains
-  if (props.messageSignature) {
-    state.message = removeSignature(
-      state.message,
-      props.messageSignature,
-      effectiveChannelType.value
-    );
-  }
-};
-
 const removeTargetInbox = value => {
   v$.value.$reset();
   copilot.reset(false);
-  removeSignatureFromMessage();
 
   stripMessageFormatting(DEFAULT_FORMATTING);
 
@@ -247,7 +257,6 @@ const removeTargetInbox = value => {
 
 const clearSelectedContact = () => {
   copilot.reset(false);
-  removeSignatureFromMessage();
   emit('clearSelectedContact');
   state.message = '';
   state.attachedFiles = [];
@@ -255,22 +264,6 @@ const clearSelectedContact = () => {
 
 const onClickInsertEmoji = emoji => {
   state.message += emoji;
-};
-
-const handleAddSignature = signature => {
-  state.message = appendSignature(
-    state.message,
-    signature,
-    effectiveChannelType.value
-  );
-};
-
-const handleRemoveSignature = signature => {
-  state.message = removeSignature(
-    state.message,
-    signature,
-    effectiveChannelType.value
-  );
 };
 
 const handleAttachFile = files => {
@@ -294,8 +287,10 @@ const handleSendMessage = async () => {
   if (!isValid) return;
 
   try {
+    const { payload, followUpFiles } = newMessagePayload();
     const success = await emit('createConversation', {
-      payload: newMessagePayload(),
+      payload,
+      followUpFiles,
       isFromWhatsApp: false,
     });
     if (success) {
@@ -336,7 +331,7 @@ const handleSendTwilioMessage = async ({ message, templateParams }) => {
 
 const shouldShowMessageEditor = computed(() => {
   return (
-    !inboxTypes.value.isWhatsapp &&
+    (!inboxTypes.value.isWhatsapp || inboxTypes.value.isWhatsappSession) &&
     !showNoInboxAlert.value &&
     !inboxTypes.value.isTwilioWhatsapp
   );
@@ -363,7 +358,7 @@ useKeyboardEvents({
 
 <template>
   <div
-    class="w-full md:w-[42rem] divide-y divide-n-strong overflow-visible transition-all duration-300 ease-in-out top-full flex flex-col bg-n-alpha-3 border border-n-strong shadow-sm backdrop-blur-[100px] rounded-xl min-w-0 max-h-[calc(100vh-8rem)]"
+    class="w-full divide-y divide-n-strong overflow-visible transition-all duration-300 ease-in-out top-full flex flex-col bg-n-alpha-3 border border-n-strong shadow-sm backdrop-blur-[100px] rounded-xl min-w-0 max-h-[calc(100vh-8rem)]"
   >
     <div class="flex-1 overflow-y-auto divide-y divide-n-strong">
       <ContactSelector
@@ -439,6 +434,7 @@ useKeyboardEvents({
       v-else
       :attached-files="state.attachedFiles"
       :is-whatsapp-inbox="inboxTypes.isWhatsapp"
+      :is-whatsapp-session-inbox="inboxTypes.isWhatsappSession"
       :is-email-or-web-widget-inbox="inboxTypes.isEmailOrWebWidget"
       :is-twilio-sms-inbox="inboxTypes.isTwilioSMS"
       :is-twilio-whats-app-inbox="inboxTypes.isTwilioWhatsapp"
@@ -453,8 +449,6 @@ useKeyboardEvents({
       :is-dropdown-active="isAnyDropdownActive"
       :message-signature="messageSignature"
       @insert-emoji="onClickInsertEmoji"
-      @add-signature="handleAddSignature"
-      @remove-signature="handleRemoveSignature"
       @attach-file="handleAttachFile"
       @discard="$emit('discard')"
       @send-message="handleSendMessage"

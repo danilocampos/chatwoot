@@ -303,6 +303,8 @@ export default {
           this.$store.dispatch('conversationLabels/destroy', message.label);
         } else if (message.event === 'set-user') {
           this.$store.dispatch('contacts/setUser', message);
+        } else if (message.event === 'resolve-redirect') {
+          this.handleResolveRedirect(message.token);
         } else if (message.event === 'set-custom-attributes') {
           this.$store.dispatch(
             'contacts/setCustomAttributes',
@@ -354,6 +356,15 @@ export default {
           this.setBubbleVisibility(message.hideMessageBubble);
         }
       });
+    },
+    async handleResolveRedirect(token) {
+      const resolved = await this.$store.dispatch(
+        'contacts/resolveRedirect',
+        token
+      );
+      if (resolved) {
+        this.router.replace({ name: 'messages' });
+      }
     },
     sendLoadedEvent() {
       IFrameHelper.sendMessage(loadedEventConfig());

@@ -423,5 +423,21 @@ export default {
         <Spinner color-scheme="primary" size="" />
       </div>
     </section>
+    <!-- eslint-disable vue/no-bare-strings-in-template @intlify/vue-i18n/no-raw-text -->
+    <p
+      v-if="globalConfig.displayManifest"
+      class="mt-8 text-center text-xs text-n-slate-10"
+    >
+      powered by
+      <a
+        href="https://hablas.chat"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-n-slate-11 hover:text-n-brand"
+      >
+        Hablas
+      </a>
+    </p>
+    <!-- eslint-enable vue/no-bare-strings-in-template @intlify/vue-i18n/no-raw-text -->
   </main>
 </template>

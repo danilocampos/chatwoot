@@ -100,3 +100,6 @@ html.light {
 </script>
 <%= @portal.channel_web_widget.web_widget_script.html_safe %>
 <% end %>
+<% if !@is_plain_layout_enabled && @portal.custom_body_html.present? %>
+  <%= @portal.custom_body_html.html_safe %>
+<% end %>

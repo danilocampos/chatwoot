@@ -7,6 +7,7 @@ class Agents::DestroyJob < ApplicationJob
       remove_user_from_teams(account, user)
       remove_user_from_inboxes(account, user)
       unassign_conversations(account, user)
+      preserve_internal_chat_dm_names(account, user)
     end
   end
 
@@ -37,5 +38,13 @@ class Agents::DestroyJob < ApplicationJob
     return unless unassigned_count.positive?
 
     ::Conversations::UnreadCounts::FilteredCountInvalidator.new(account).conversation_changed!
+  end
+
+  def preserve_internal_chat_dm_names(account, user)
+    dm_channels = account.internal_chat_channels.where(channel_type: :dm)
+                         .joins(:channel_members).where(internal_chat_channel_members: { user_id: user.id })
+    # rubocop:disable Rails/SkipsModelValidations
+    dm_channels.where(name: [nil, '']).update_all(name: user.name)
+    # rubocop:enable Rails/SkipsModelValidations
   end
 end
