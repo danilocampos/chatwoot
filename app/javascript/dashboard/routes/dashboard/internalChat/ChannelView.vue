@@ -21,8 +21,6 @@ import ThreadPanel from './ThreadPanel.vue';
 import PollCreator from './PollCreator.vue';
 import ChannelSettings from './ChannelSettings.vue';
 import EditMembersModal from './EditMembersModal.vue';
-import ProFeatureNudge from './ProFeatureNudge.vue';
-import { useInternalChatPro } from 'dashboard/composables/useInternalChatPro';
 import { useBreakpoints, breakpointsTailwind } from '@vueuse/core';
 
 const props = defineProps({
@@ -53,9 +51,6 @@ const threadPanelRef = ref(null);
 const pollCreatorRef = ref(null);
 const editMembersRef = ref(null);
 const channelSettingsRef = ref(null);
-const proNudgeRef = ref(null);
-const proNudgeFeature = ref('polls');
-const { pollsEnabled } = useInternalChatPro();
 const editingMessage = ref(null);
 // Below lg the settings panel covers the conversation, so a stored "open" from
 // a desktop session must not be what greets you when you open a channel here.
@@ -234,11 +229,6 @@ function handleReply(message) {
 }
 
 function handleCreatePoll() {
-  if (!pollsEnabled.value) {
-    proNudgeFeature.value = 'polls';
-    proNudgeRef.value?.open();
-    return;
-  }
   pollCreatorRef.value?.open();
 }
 
@@ -354,13 +344,8 @@ async function handleArchive() {
 async function handleUnarchive() {
   try {
     await store.dispatch('internalChat/unarchive', props.channelId);
-  } catch (error) {
-    if (error?.response?.status === 402) {
-      proNudgeFeature.value = 'private_channels';
-      proNudgeRef.value?.open();
-    } else {
-      useAlert(t('INTERNAL_CHAT.ERRORS.SEND_MESSAGE'));
-    }
+  } catch {
+    useAlert(t('INTERNAL_CHAT.ERRORS.SEND_MESSAGE'));
   }
 }
 
@@ -679,7 +664,6 @@ onBeforeUnmount(() => {
     />
 
     <PollCreator ref="pollCreatorRef" @submit="handlePollSubmit" />
-    <ProFeatureNudge ref="proNudgeRef" :feature="proNudgeFeature" />
     <EditMembersModal
       ref="editMembersRef"
       :channel-id="channelId"

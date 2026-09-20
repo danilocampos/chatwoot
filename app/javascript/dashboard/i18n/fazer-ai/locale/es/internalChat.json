@@ -195,16 +195,6 @@
     "ARCHIVED": {
       "TITLE": "Archivados",
       "EMPTY": "No hay canales archivados"
-    },
-    "PRO": {
-      "TITLE": "Mejore su plan a Pro",
-      "POLLS_DESCRIPTION": "La creación de encuestas está disponible en la versión Pro.",
-      "PRIVATE_CHANNELS_DESCRIPTION": "Alcanzó el límite de {limit} canales privados. Mejore su plan a Pro para tener canales privados ilimitados.",
-      "SEARCH_DESCRIPTION": "La búsqueda se limita a los últimos {days} días. Mejore su plan a Pro para tener un historial de búsqueda ilimitado.",
-      "SEARCH_LIMITED_NOTE": "Resultados de los últimos {days} días",
-      "UPGRADE_NOW": "Mejorar plan",
-      "ADMIN_MESSAGE": "Esta función no está disponible en su plan actual. Contacte al administrador de la plataforma para mejorar el plan.",
-      "AGENT_MESSAGE": "Esta función no está disponible en su plan actual. Contacte a su administrador para mejorar el plan."
     }
   }
 }

@@ -7,12 +7,9 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import NextSelect from 'dashboard/components-next/select/Select.vue';
-import ProFeatureNudge from './ProFeatureNudge.vue';
-import { useInternalChatPro } from 'dashboard/composables/useInternalChatPro';
 
 const store = useStore();
 const { t } = useI18n();
-const { maxPrivateChannels } = useInternalChatPro();
 
 const dialogRef = ref(null);
 const channelName = ref('');
@@ -49,30 +46,12 @@ const isPrivate = computed({
   },
 });
 
-const privateChannelCount = computed(() => {
-  const channels = store.getters['internalChat/getChannels'] || [];
-  return channels.filter(
-    c => c.channel_type === 'private_channel' && c.status !== 'archived'
-  ).length;
-});
-
-const canCreatePrivate = computed(() => {
-  if (!maxPrivateChannels.value) return true;
-  return privateChannelCount.value < maxPrivateChannels.value;
-});
-
-const privateLimitReached = computed(
-  () => isPrivate.value && !canCreatePrivate.value
-);
-
 const categoryOptions = computed(() => [
   { value: '', label: t('INTERNAL_CHAT.CATEGORY.NONE') },
   ...categories.value.map(cat => ({ value: cat.id, label: cat.name })),
 ]);
 
-const isFormValid = computed(
-  () => channelName.value.trim().length > 0 && !privateLimitReached.value
-);
+const isFormValid = computed(() => channelName.value.trim().length > 0);
 
 function toggleAgent(agentId) {
   const idx = selectedAgentIds.value.indexOf(agentId);
@@ -110,11 +89,8 @@ async function handleConfirm() {
     });
     useAlert(t('INTERNAL_CHAT.CHANNEL.CREATED'));
     dialogRef.value?.close();
-  } catch (error) {
-    if (error?.response?.status === 402) {
-      // Backend rejected: private channel limit reached. Refresh UI state.
-      channelType.value = 'public_channel';
-    }
+  } catch {
+    useAlert(t('INTERNAL_CHAT.ERRORS.SEND_MESSAGE'));
   } finally {
     isCreating.value = false;
   }
@@ -181,15 +157,8 @@ defineExpose({ open });
         {{ t('INTERNAL_CHAT.CHANNEL.ALL_AGENTS_NOTE') }}
       </div>
 
-      <!-- Private channel limit reached -->
-      <ProFeatureNudge
-        v-if="privateLimitReached"
-        feature="private_channels"
-        inline
-      />
-
       <!-- Private channel: agent selection -->
-      <template v-if="isPrivate && canCreatePrivate">
+      <template v-if="isPrivate">
         <!-- Agent selection -->
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium text-n-slate-12">

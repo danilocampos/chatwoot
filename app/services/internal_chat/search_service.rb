@@ -17,7 +17,7 @@ class InternalChat::SearchService
       channels: search_channels,
       dms: search_dms,
       messages: search_messages,
-      meta: { messages_page: @page, messages_has_more: messages_has_more?, search_limited: InternalChat::Limits.search_history_days.present? }
+      meta: { messages_page: @page, messages_has_more: messages_has_more? }
     }
   end
 
@@ -77,7 +77,6 @@ class InternalChat::SearchService
                .where(internal_chat_channel_id: accessible_channel_ids)
                .where('f_unaccent(internal_chat_messages.content) ILIKE f_unaccent(:q)', q: "%#{sanitized_query}%")
                .where(not_deleted, 'true')
-               .then { |msgs| apply_search_history_limit(msgs) }
                .includes(:sender, :channel)
                .order(created_at: :desc)
                .offset((@page - 1) * MESSAGES_PER_PAGE)
@@ -120,13 +119,6 @@ class InternalChat::SearchService
 
   def accessible_channel_ids
     @accessible_channel_ids ||= accessible_channels.pluck(:id)
-  end
-
-  def apply_search_history_limit(messages)
-    days = InternalChat::Limits.search_history_days
-    return messages if days.blank?
-
-    messages.where('internal_chat_messages.created_at >= ?', days.days.ago)
   end
 
   def sanitized_query

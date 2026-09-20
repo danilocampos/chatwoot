@@ -11,7 +11,6 @@ import CreateCategoryModal from './CreateCategoryModal.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Draggable from 'vuedraggable';
 import { emitter } from 'shared/helpers/mitt';
-import ProFeatureNudge from './ProFeatureNudge.vue';
 import {
   useBreakpoints,
   breakpointsTailwind,
@@ -103,10 +102,6 @@ const searchMessages = computed(
 const searchUIFlags = computed(
   () => store.getters['internalChat/search/getUIFlags']
 );
-const isSearchLimited = computed(
-  () => store.getters['internalChat/search/isSearchLimited']
-);
-
 const accountId = computed(() => {
   return route.params.accountId;
 });
@@ -669,9 +664,6 @@ async function handleDeleteCategory() {
           >
             {{ t('INTERNAL_CHAT.SEARCH.MESSAGES') }}
           </h3>
-          <div v-if="isSearchLimited" class="px-2 pb-2">
-            <ProFeatureNudge feature="search" inline />
-          </div>
           <button
             v-for="message in searchMessages"
             :key="`sm-${message.id}`"

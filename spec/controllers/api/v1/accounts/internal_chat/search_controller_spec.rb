@@ -50,35 +50,6 @@ RSpec.describe 'Internal Chat Search API', type: :request do
         expect(response.parsed_body['messages']).to be_empty
       end
 
-      it 'flags search_limited in meta when search history limit is active' do
-        allow(InternalChat::Limits).to receive(:search_history_days).and_return(90)
-
-        get "/api/v1/accounts/#{account.id}/internal_chat/search",
-            params: { q: 'whatever' },
-            headers: agent.create_new_auth_token,
-            as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(response.parsed_body['meta']['search_limited']).to be true
-      end
-
-      it 'omits messages older than the search history limit' do
-        allow(InternalChat::Limits).to receive(:search_history_days).and_return(90)
-
-        old_msg = create(:internal_chat_message, account: account, channel: public_channel, sender: agent, content: 'archived planning notes')
-        old_msg.update_columns(created_at: 100.days.ago, updated_at: 100.days.ago) # rubocop:disable Rails/SkipsModelValidations
-        create(:internal_chat_message, account: account, channel: public_channel, sender: agent, content: 'fresh planning notes')
-
-        get "/api/v1/accounts/#{account.id}/internal_chat/search",
-            params: { q: 'planning notes' },
-            headers: agent.create_new_auth_token,
-            as: :json
-
-        expect(response).to have_http_status(:success)
-        contents = response.parsed_body['messages'].map { |m| m['content'] }
-        expect(contents).to include('fresh planning notes')
-        expect(contents).not_to include('archived planning notes')
-      end
     end
   end
 end

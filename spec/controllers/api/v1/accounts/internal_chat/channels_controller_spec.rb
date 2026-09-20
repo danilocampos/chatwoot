@@ -277,26 +277,11 @@ RSpec.describe 'Internal Chat Channels API', type: :request do
         expect(body['channel_type']).to eq('private_channel')
       end
 
-      it 'returns payment_required when private channel limit is reached' do
+      it 'creates a private channel when other private channels already exist' do
         create_list(:internal_chat_channel, 2, :private_channel, account: account)
 
         post "/api/v1/accounts/#{account.id}/internal_chat/channels",
              params: { channel: { name: 'third-private', channel_type: 'private_channel' } },
-             headers: administrator.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:payment_required)
-        body = response.parsed_body
-        expect(body['error']).to eq('pro_feature_required')
-        expect(body['feature']).to eq('private_channels')
-      end
-
-      it 'does not count archived private channels toward the limit' do
-        create(:internal_chat_channel, :private_channel, account: account)
-        create(:internal_chat_channel, :private_channel, :archived, account: account)
-
-        post "/api/v1/accounts/#{account.id}/internal_chat/channels",
-             params: { channel: { name: 'second-active-private', channel_type: 'private_channel' } },
              headers: administrator.create_new_auth_token,
              as: :json
 
@@ -553,7 +538,7 @@ RSpec.describe 'Internal Chat Channels API', type: :request do
         expect(body['status']).to eq('active')
       end
 
-      it 'returns payment_required when unarchiving a private channel would exceed the limit' do
+      it 'unarchives a private channel when other private channels already exist' do
         create_list(:internal_chat_channel, 2, :private_channel, account: account)
         archived_private = create(:internal_chat_channel, :private_channel, :archived, account: account, name: 'old-private')
 
@@ -561,10 +546,9 @@ RSpec.describe 'Internal Chat Channels API', type: :request do
              headers: administrator.create_new_auth_token,
              as: :json
 
-        expect(response).to have_http_status(:payment_required)
+        expect(response).to have_http_status(:success)
         body = response.parsed_body
-        expect(body['error']).to eq('pro_feature_required')
-        expect(body['feature']).to eq('private_channels')
+        expect(body['status']).to eq('active')
       end
     end
   end

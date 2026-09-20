@@ -103,8 +103,8 @@ class ForkTranslations # rubocop:disable Metrics/ClassLength
     end
   end
 
-  def capture(*)
-    out, _err, status = Open3.capture3(*)
+  def capture(*command)
+    out, _err, status = Open3.capture3(*command)
     status.success? ? out : ''
   end
 
