@@ -13,7 +13,7 @@ export const initFaviconSwitcher = () => {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       favicons.forEach(favicon => {
-        const oldFileName = `/favicon-${favicon.sizes[[0]]}.png`;
+        const oldFileName = `/favicon-${favicon.sizes[[0]]}.png?v=hablas-20260920`;
         favicon.href = oldFileName;
       });
     }

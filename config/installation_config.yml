@@ -19,7 +19,7 @@
   display_title: 'Installation Name'
   description: 'The installation wide name that would be used in the dashboard, title etc.'
 - name: LOGO_THUMBNAIL
-  value: '/brand-assets/hablas_logo_thumbnail.png'
+  value: '/brand-assets/hablas_logo_thumbnail.png?v=hablas-20260920'
   display_title: 'Logo Thumbnail'
   description: 'The thumbnail that would be used for favicon (512px X 512px)'
 - name: LOGO
@@ -31,7 +31,7 @@
   display_title: 'Logo Dark Mode'
   description: 'The logo that would be used on the dashboard, login page etc. for dark mode'
 - name: LOGO_EMAIL
-  value: '/brand-assets/hablas_logo_thumbnail.png'
+  value: '/brand-assets/hablas_logo_thumbnail.png?v=hablas-20260920'
   display_title: 'Email Logo'
   description: 'The logo shown at the top of outgoing emails. Must be a PNG, JPG or GIF -- email clients do not render SVG. A relative path is resolved against FRONTEND_URL. Left empty, LOGO is used when it is one of those formats, and no logo is shown otherwise.'
 - name: BRAND_URL
