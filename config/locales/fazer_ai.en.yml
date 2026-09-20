@@ -165,3 +165,168 @@ en:
         fourth: fourth
         fifth: fifth
         last: last
+  administrate:
+    actions:
+      confirm: Are you sure?
+      destroy: Delete
+      edit: Edit
+      edit_resource: "Edit %{name}"
+      show_resource: "View %{name}"
+      new_resource: "Create %{name}"
+      back: Back
+    controller:
+      create:
+        success: "%{resource} was successfully created."
+      destroy:
+        success: "%{resource} was successfully deleted."
+      update:
+        success: "%{resource} was successfully updated."
+    fields:
+      has_many:
+        more: "Showing %{count} of %{total_count}"
+        none: None
+    form:
+      error: error
+      errors: "%{pluralized_errors} prevented %{resource_name} from being saved:"
+    navigation:
+      back_to_app: Back to the app
+    search:
+      clear: Clear search
+      label: "Search %{resource}"
+  views:
+    pagination:
+      first: "&laquo; First"
+      last: "Last &raquo;"
+      previous: "&lsaquo; Previous"
+      next: "Next &rsaquo;"
+      truncate: "&hellip;"
+  helpers:
+    page_entries_info:
+      entry:
+        zero: items
+        one: item
+        other: items
+      one_page:
+        display_entries:
+          zero: "No %{entry_name} found"
+          one: "Displaying <b>1</b> %{entry_name}"
+          other: "Displaying <b>all %{count}</b> %{entry_name}"
+      more_pages:
+        display_entries: "Displaying %{entry_name} <b>%{first}&nbsp;-&nbsp;%{last}</b> of <b>%{total}</b> in total"
+  activerecord:
+    models:
+      account:
+        one: Account
+        other: Accounts
+      user:
+        one: User
+        other: Users
+      platform_app:
+        one: Platform app
+        other: Platform apps
+      agent_bot:
+        one: Agent bot
+        other: Agent bots
+      platform_banner:
+        one: Platform banner
+        other: Platform banners
+      access_token:
+        one: Access token
+        other: Access tokens
+      account_user:
+        one: Account user
+        other: Account users
+      installation_config:
+        one: Installation configuration
+        other: Installation configurations
+    attributes:
+      account:
+        id: ID
+        name: Name
+        created_at: Created at
+        updated_at: Updated at
+        users: Users
+        conversations: Conversations
+        locale: Locale
+        status: Status
+        suspension_history: Suspension history
+        account_users: Account users
+        custom_attributes: Custom attributes
+        hide_agent_unassigned_tab: Hide the unassigned tab for agents
+        hide_agent_all_tab: Hide the all tab for agents
+        disable_agent_message_deletion: Disable message deletion by agents
+        all_features: Enabled features
+        limits: Limits
+        manually_managed_features: Manually managed features
+        captain_models: Captain models
+      user:
+        id: ID
+        avatar_url: Avatar
+        avatar: Avatar
+        provider: Provider
+        uid: UID
+        password: Password
+        sign_in_count: Sign-in count
+        current_sign_in_at: Current sign-in at
+        last_sign_in_at: Last sign-in at
+        current_sign_in_ip: Current sign-in IP
+        last_sign_in_ip: Last sign-in IP
+        confirmation_token: Confirmation token
+        confirmed_at: Confirmed at
+        confirmation_sent_at: Confirmation sent at
+        unconfirmed_email: Unconfirmed email
+        name: Name
+        display_name: Display name
+        email: Email
+        tokens: Tokens
+        created_at: Created at
+        updated_at: Updated at
+        pubsub_token: Pubsub token
+        type: Type
+        accounts: Accounts
+        access_token: Access token
+        account_users: User accounts
+      access_token:
+        owner: Owner
+        id: ID
+        token: Token
+        created_at: Created at
+        updated_at: Updated at
+      account_user:
+        account: Account
+        user: User
+        inviter: Invited by
+        id: ID
+        role: Role
+        created_at: Created at
+        updated_at: Updated at
+      agent_bot:
+        access_token: Access token
+        avatar_url: Avatar
+        avatar: Avatar
+        id: ID
+        name: Name
+        account: Account
+        description: Description
+        outgoing_url: Outgoing URL
+        created_at: Created at
+        updated_at: Updated at
+      installation_config:
+        id: ID
+        name: Name
+        value: Value
+        created_at: Created at
+        updated_at: Updated at
+      platform_app:
+        access_token: Access token
+        id: ID
+        name: Name
+        created_at: Created at
+        updated_at: Updated at
+      platform_banner:
+        id: ID
+        banner_message: Banner message
+        banner_type: Banner type
+        active: Active
+        created_at: Created at
+        updated_at: Updated at

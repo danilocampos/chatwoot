@@ -165,3 +165,168 @@ es:
         fourth: cuarto
         fifth: quinto
         last: último
+  administrate:
+    actions:
+      confirm: ¿Estás seguro?
+      destroy: Eliminar
+      edit: Editar
+      edit_resource: "Editar %{name}"
+      show_resource: "Ver %{name}"
+      new_resource: "Crear %{name}"
+      back: Volver
+    controller:
+      create:
+        success: "%{resource} se creó correctamente."
+      destroy:
+        success: "%{resource} se eliminó correctamente."
+      update:
+        success: "%{resource} se actualizó correctamente."
+    fields:
+      has_many:
+        more: "Mostrando %{count} de %{total_count}"
+        none: Ninguno
+    form:
+      error: error
+      errors: "%{pluralized_errors} impidieron guardar %{resource_name}:"
+    navigation:
+      back_to_app: Volver a la aplicación
+    search:
+      clear: Limpiar búsqueda
+      label: "Buscar %{resource}"
+  views:
+    pagination:
+      first: "&laquo; Primera"
+      last: "Última &raquo;"
+      previous: "&lsaquo; Anterior"
+      next: "Siguiente &rsaquo;"
+      truncate: "&hellip;"
+  helpers:
+    page_entries_info:
+      entry:
+        zero: elementos
+        one: elemento
+        other: elementos
+      one_page:
+        display_entries:
+          zero: "No se encontraron %{entry_name}"
+          one: "Mostrando <b>1</b> %{entry_name}"
+          other: "Mostrando <b>todos los %{count}</b> %{entry_name}"
+      more_pages:
+        display_entries: "Mostrando %{entry_name} <b>%{first}&nbsp;-&nbsp;%{last}</b> de <b>%{total}</b> en total"
+  activerecord:
+    models:
+      account:
+        one: Cuenta
+        other: Cuentas
+      user:
+        one: Usuario
+        other: Usuarios
+      platform_app:
+        one: Aplicación de plataforma
+        other: Aplicaciones de plataforma
+      agent_bot:
+        one: Bot de agente
+        other: Bots de agente
+      platform_banner:
+        one: Banner de plataforma
+        other: Banners de plataforma
+      access_token:
+        one: Token de acceso
+        other: Tokens de acceso
+      account_user:
+        one: Usuario de la cuenta
+        other: Usuarios de la cuenta
+      installation_config:
+        one: Configuración de la instalación
+        other: Configuraciones de la instalación
+    attributes:
+      account:
+        id: ID
+        name: Nombre
+        created_at: Creado el
+        updated_at: Actualizado el
+        users: Usuarios
+        conversations: Conversaciones
+        locale: Idioma
+        status: Estado
+        suspension_history: Historial de suspensión
+        account_users: Usuarios de la cuenta
+        custom_attributes: Atributos personalizados
+        hide_agent_unassigned_tab: Ocultar la pestaña sin asignar para los agentes
+        hide_agent_all_tab: Ocultar la pestaña todos para los agentes
+        disable_agent_message_deletion: Desactivar la eliminación de mensajes por los agentes
+        all_features: Funciones habilitadas
+        limits: Límites
+        manually_managed_features: Funciones administradas manualmente
+        captain_models: Modelos de Captain
+      user:
+        id: ID
+        avatar_url: Avatar
+        avatar: Avatar
+        provider: Proveedor
+        uid: UID
+        password: Contraseña
+        sign_in_count: Cantidad de inicios de sesión
+        current_sign_in_at: Inicio de sesión actual
+        last_sign_in_at: Último inicio de sesión
+        current_sign_in_ip: IP del inicio de sesión actual
+        last_sign_in_ip: IP del último inicio de sesión
+        confirmation_token: Token de confirmación
+        confirmed_at: Confirmado el
+        confirmation_sent_at: Confirmación enviada el
+        unconfirmed_email: Correo electrónico sin confirmar
+        name: Nombre
+        display_name: Nombre para mostrar
+        email: Correo electrónico
+        tokens: Tokens
+        created_at: Creado el
+        updated_at: Actualizado el
+        pubsub_token: Token pubsub
+        type: Tipo
+        accounts: Cuentas
+        access_token: Token de acceso
+        account_users: Cuentas del usuario
+      access_token:
+        owner: Propietario
+        id: ID
+        token: Token
+        created_at: Creado el
+        updated_at: Actualizado el
+      account_user:
+        account: Cuenta
+        user: Usuario
+        inviter: Invitado por
+        id: ID
+        role: Función
+        created_at: Creado el
+        updated_at: Actualizado el
+      agent_bot:
+        access_token: Token de acceso
+        avatar_url: Avatar
+        avatar: Avatar
+        id: ID
+        name: Nombre
+        account: Cuenta
+        description: Descripción
+        outgoing_url: URL de salida
+        created_at: Creado el
+        updated_at: Actualizado el
+      installation_config:
+        id: ID
+        name: Nombre
+        value: Valor
+        created_at: Creado el
+        updated_at: Actualizado el
+      platform_app:
+        access_token: Token de acceso
+        id: ID
+        name: Nombre
+        created_at: Creado el
+        updated_at: Actualizado el
+      platform_banner:
+        id: ID
+        banner_message: Mensaje del banner
+        banner_type: Tipo de banner
+        active: Activo
+        created_at: Creado el
+        updated_at: Actualizado el
