@@ -24,7 +24,7 @@ const onDrop = (event, targetStatus) => {
 
 <template>
   <section
-    class="flex flex-col w-80 h-full rounded-xl border shrink-0 bg-n-solid-2 border-n-weak"
+    class="flex flex-col w-80 h-full overflow-hidden border rounded-lg shrink-0 bg-n-solid-2 border-n-weak"
     :class="{ 'outline outline-2 outline-n-brand': isOver }"
     @dragover.prevent="isOver = true"
     @dragleave="isOver = false"
@@ -35,22 +35,24 @@ const onDrop = (event, targetStatus) => {
     >
       <div class="flex gap-2 items-center min-w-0">
         <span class="size-2.5 rounded-full shrink-0" :class="column.dotClass" />
-        <h2 class="font-medium truncate text-n-slate-12">{{ column.title }}</h2>
+        <h2 class="text-sm font-medium truncate text-n-slate-12">
+          {{ column.title }}
+        </h2>
         <span
-          class="px-2 py-0.5 text-xs rounded-full bg-n-alpha-2 text-n-slate-11"
+          class="px-1.5 py-0.5 text-xs rounded-md bg-n-alpha-2 text-n-slate-10"
         >
           {{ conversations.length }}
         </span>
       </div>
       <Button
-        ghost
-        slate
-        sm
+        :aria-label="t('KANBAN.EXPORT.BUTTON')"
+        icon="i-lucide-download"
+        color="slate"
+        size="sm"
+        variant="ghost"
         :title="t('KANBAN.EXPORT.BUTTON')"
         @click="emit('exportColumn', column.id)"
-      >
-        <Icon icon="i-lucide-download" class="size-4" />
-      </Button>
+      />
     </header>
 
     <div class="flex-1 p-3 space-y-3 min-h-48 overflow-y-auto">

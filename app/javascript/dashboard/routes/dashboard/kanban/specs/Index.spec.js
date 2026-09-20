@@ -4,6 +4,7 @@ import KanbanAPI from 'dashboard/api/kanban';
 import KanbanFunnelsAPI from 'dashboard/api/kanbanFunnels';
 import KanbanBoard from 'dashboard/components/kanban/KanbanBoard.vue';
 import FunnelEditor from 'dashboard/components/kanban/FunnelEditor.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Index from '../Index.vue';
 
 vi.mock('dashboard/api/kanban', () => ({
@@ -36,7 +37,7 @@ describe('Kanban funnels', () => {
   it('switches columns and scopes moves to the selected funnel', async () => {
     const wrapper = shallowMount(Index, { global: { plugins: [store] } });
     await flushPromises();
-    await wrapper.find('select').setValue('7');
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', '7');
     await flushPromises();
     expect(KanbanAPI.getConversations).toHaveBeenLastCalledWith(
       expect.objectContaining({ funnel_id: '7' })
@@ -61,7 +62,8 @@ describe('Kanban funnels', () => {
       contact: { name: 'Customer' },
     });
     await flushPromises();
-    await wrapper.find('form select').setValue('7');
+    wrapper.findAllComponents(Select)[1].vm.$emit('update:modelValue', '7');
+    await flushPromises();
     await wrapper.find('form').trigger('submit');
     await flushPromises();
     expect(KanbanAPI.moveConversation).toHaveBeenCalledWith(42, 'new', '7');
@@ -83,7 +85,7 @@ describe('Kanban funnels', () => {
     expect(KanbanFunnelsAPI.create).toHaveBeenCalledWith({
       funnel: { name: funnel.name, stages: funnel.stages },
     });
-    expect(wrapper.find('select').element.value).toBe('8');
+    expect(wrapper.findComponent(Select).props('modelValue')).toBe('8');
     expect(wrapper.findComponent(FunnelEditor).exists()).toBe(false);
   });
 
@@ -97,7 +99,7 @@ describe('Kanban funnels', () => {
     );
     const wrapper = shallowMount(Index, { global: { plugins: [store] } });
     await flushPromises();
-    await wrapper.find('select').setValue('7');
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', '7');
     await flushPromises();
     resolveDefault({
       data: { ...board, kanban_data: { novo_lead: [{ id: 42 }] } },
@@ -118,7 +120,7 @@ describe('Kanban funnels', () => {
     });
     const wrapper = shallowMount(Index, { global: { plugins: [agentStore] } });
     await flushPromises();
-    await wrapper.find('select').setValue('7');
+    wrapper.findComponent(Select).vm.$emit('update:modelValue', '7');
     await flushPromises();
     expect(wrapper.findAllComponents({ name: 'Button' })).toHaveLength(1);
     expect(wrapper.findComponent(FunnelEditor).exists()).toBe(false);

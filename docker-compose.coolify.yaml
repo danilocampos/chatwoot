@@ -2,7 +2,7 @@ version: '3'
 
 services:
   rails:
-    image: 'ghcr.io/danilocampos/chatwoot:v4.18.0-hablas.2'
+    image: 'ghcr.io/danilocampos/chatwoot:v4.18.0-hablas.3'
     pull_policy: always
     volumes:
       - 'storage:/app/storage'
@@ -56,7 +56,7 @@ services:
       retries: 10
 
   sidekiq:
-    image: 'ghcr.io/danilocampos/chatwoot:v4.18.0-hablas.2'
+    image: 'ghcr.io/danilocampos/chatwoot:v4.18.0-hablas.3'
     pull_policy: always
     volumes:
       - 'storage:/app/storage'

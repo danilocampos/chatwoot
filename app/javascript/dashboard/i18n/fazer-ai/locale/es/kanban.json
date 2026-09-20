@@ -1,6 +1,10 @@
 {
   "KANBAN": {
     "FUNNELS": {
+      "NAME_PLACEHOLDER": "Ej.: Ventas consultivas",
+      "STAGES": "Etapas del embudo",
+      "STAGE_COUNT": "{count} de {max}",
+      "REQUIRED": "Introduce un nombre.",
       "LABEL": "Embudo",
       "DEFAULT": "Embudo predeterminado",
       "NEW": "Nuevo embudo",

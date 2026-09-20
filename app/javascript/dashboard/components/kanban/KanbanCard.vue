@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
+import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
 const props = defineProps({
@@ -65,14 +66,14 @@ const openConversation = () => {
 
 <template>
   <article
-    class="p-4 rounded-xl border cursor-pointer bg-n-solid-1 border-n-weak hover:border-n-strong hover:shadow-sm"
+    class="p-4 border rounded-lg cursor-pointer bg-n-solid-1 border-n-weak hover:border-n-strong hover:shadow-sm"
     draggable="true"
     @dragstart="onDragStart"
     @click="openConversation"
   >
     <div class="flex gap-3 justify-between items-start">
       <div class="min-w-0">
-        <h3 class="font-medium truncate text-n-slate-12">
+        <h3 class="text-sm font-medium truncate text-n-slate-12">
           {{ contact.name || t('KANBAN.CARD.UNNAMED') }}
         </h3>
         <p class="mt-0.5 text-xs truncate text-n-slate-10">
@@ -112,12 +113,13 @@ const openConversation = () => {
       </span>
       <span class="text-xs text-n-slate-10">{{ lastActivity }}</span>
     </div>
-    <button
+    <Button
+      :label="t('KANBAN.FUNNELS.MOVE')"
       type="button"
-      class="mt-3 text-xs text-n-blue-11 hover:underline"
+      size="xs"
+      variant="link"
+      class="mt-3"
       @click.stop="emit('transfer')"
-    >
-      {{ t('KANBAN.FUNNELS.MOVE') }}
-    </button>
+    />
   </article>
 </template>

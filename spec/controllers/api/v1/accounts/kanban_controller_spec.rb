@@ -81,6 +81,32 @@ RSpec.describe 'Kanban API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.dig('stats', 'total')).to eq(0)
     end
+
+    it 'includes contacts displayed as cold when their temperature is missing or unrecognized' do
+      [nil, '', 'unknown', 'frio'].each do |temperature|
+        conversation.contact.update!(custom_attributes: { temperatura: temperature })
+        get "/api/v1/accounts/#{account.id}/kanban",
+            params: { temperatura: 'frio' }, headers: agent.create_new_auth_token, as: :json
+        expect(response.parsed_body.dig('kanban_data', 'novo_lead').pluck('id')).to eq([conversation.display_id])
+      end
+      conversation.contact.update!(custom_attributes: { temperatura: 'quente' })
+      get "/api/v1/accounts/#{account.id}/kanban",
+          params: { temperatura: 'frio' }, headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body.dig('stats', 'total')).to eq(0)
+    end
+
+    it 'combines phone, inbox, temperature and score filters consistently with export' do
+      conversation.contact.update!(custom_attributes: { temperatura: 'morno', lead_score: 55 })
+      filters = { search: '999999999', inbox_id: inbox.id, temperatura: 'morno', score: 'medio' }
+      get "/api/v1/accounts/#{account.id}/kanban", params: filters, headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body.dig('stats', 'total')).to eq(1)
+      get "/api/v1/accounts/#{account.id}/kanban/export",
+          params: filters.merge(status: 'novo_lead'), headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body['data'].pluck('conversation_id')).to eq([conversation.display_id])
+      get "/api/v1/accounts/#{account.id}/kanban",
+          params: filters.merge(score: 'alto'), headers: agent.create_new_auth_token, as: :json
+      expect(response.parsed_body.dig('stats', 'total')).to eq(0)
+    end
   end
 
   describe 'PUT /api/v1/accounts/:account_id/kanban/:id/move' do

@@ -11,7 +11,7 @@ const emit = defineEmits(['moveCard', 'exportColumn', 'transferCard']);
 
 <template>
   <div class="flex-1 min-h-0 overflow-x-auto">
-    <div class="flex gap-4 p-4 h-full min-w-max">
+    <div class="flex gap-4 px-6 pt-4 pb-6 h-full min-w-max">
       <KanbanColumn
         v-for="column in columns"
         :key="column.id"

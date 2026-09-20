@@ -98,6 +98,10 @@ class Api::V1::Accounts::KanbanController < Api::V1::Accounts::BaseController
   def filter_by_temperature(scope)
     return scope if params[:temperatura].blank?
 
+    if params[:temperatura] == 'frio'
+      return scope.left_joins(:contact).where("COALESCE(contacts.custom_attributes->>'temperatura', '') NOT IN (?)", %w[quente morno])
+    end
+
     scope.left_joins(:contact).where("contacts.custom_attributes->>'temperatura' = ?", params[:temperatura])
   end
 

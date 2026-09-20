@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 
@@ -49,44 +50,61 @@ const clearFilters = () => {
 
 <template>
   <form
-    class="flex flex-wrap gap-2 items-center px-4 py-3 border-b bg-n-solid-1 border-n-weak"
+    class="flex flex-wrap items-center gap-2 py-4 mx-6 border-b border-n-weak"
     @submit.prevent="emit('apply')"
   >
     <Input
       :model-value="filters.search"
-      class="w-full sm:w-72"
+      type="search"
+      class="w-full sm:w-64"
+      custom-input-class="ltr:!pl-8 rtl:!pr-8"
       size="sm"
       :placeholder="t('KANBAN.FILTERS.SEARCH')"
       @update:model-value="updateFilter('search', $event)"
-    />
+    >
+      <template #prefix>
+        <Icon
+          icon="i-lucide-search"
+          class="absolute -translate-y-1/2 size-4 top-1/2 text-n-slate-10 ltr:left-2.5 rtl:right-2.5"
+        />
+      </template>
+    </Input>
     <Select
       :model-value="filters.temperatura"
       :options="temperatureOptions"
       :aria-label="t('KANBAN.FILTERS.TEMPERATURE')"
+      class="w-full sm:w-auto [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
       @update:model-value="updateFilter('temperatura', $event)"
     />
     <Select
       :model-value="filters.score"
       :options="scoreOptions"
       :aria-label="t('KANBAN.FILTERS.SCORE')"
+      class="w-full sm:w-auto [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
       @update:model-value="updateFilter('score', $event)"
     />
     <Select
       :model-value="filters.inbox_id"
       :options="inboxOptions"
       :aria-label="t('KANBAN.FILTERS.INBOX')"
+      class="w-full sm:w-auto [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
       @update:model-value="updateFilter('inbox_id', $event)"
     />
-    <Button solid blue sm type="submit">{{ t('KANBAN.FILTERS.APPLY') }}</Button>
+    <Button
+      :label="t('KANBAN.FILTERS.APPLY')"
+      icon="i-lucide-list-filter"
+      size="sm"
+      type="submit"
+    />
     <Button
       v-if="hasFilters"
-      ghost
-      slate
-      sm
+      :label="t('KANBAN.FILTERS.CLEAR')"
+      icon="i-lucide-x"
+      color="slate"
+      size="sm"
       type="button"
+      variant="ghost"
       @click="clearFilters"
-    >
-      {{ t('KANBAN.FILTERS.CLEAR') }}
-    </Button>
+    />
   </form>
 </template>

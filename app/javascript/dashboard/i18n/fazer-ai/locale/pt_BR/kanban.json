@@ -1,6 +1,10 @@
 {
   "KANBAN": {
     "FUNNELS": {
+      "NAME_PLACEHOLDER": "Ex.: Vendas consultivas",
+      "STAGES": "Etapas do funil",
+      "STAGE_COUNT": "{count} de {max}",
+      "REQUIRED": "Informe um nome.",
       "LABEL": "Funil",
       "DEFAULT": "Funil padrão",
       "NEW": "Novo funil",

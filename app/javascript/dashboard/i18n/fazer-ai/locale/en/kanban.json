@@ -1,6 +1,10 @@
 {
   "KANBAN": {
     "FUNNELS": {
+      "NAME_PLACEHOLDER": "e.g. Sales pipeline",
+      "STAGES": "Stages",
+      "STAGE_COUNT": "{count} of {max}",
+      "REQUIRED": "Enter a name.",
       "LABEL": "Funnel",
       "DEFAULT": "Default funnel",
       "NEW": "New funnel",

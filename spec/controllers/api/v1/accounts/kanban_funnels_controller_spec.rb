@@ -38,4 +38,29 @@ RSpec.describe 'Kanban funnels API', type: :request do
     expect(response).to have_http_status(:not_found)
     expect(other.reload.name).to eq('Private')
   end
+
+  it 'rejects blank names, empty stages, and more than twenty stages' do
+    [
+      { name: ' ', stages: stages },
+      { name: 'Sales', stages: [] },
+      { name: 'Sales', stages: [{ id: 'new', name: ' ' }] },
+      { name: 'Sales', stages: Array.new(21) { |i| { id: i.to_s, name: i.to_s } } }
+    ].each do |funnel|
+      post url, params: { funnel: funnel }, headers: admin.create_new_auth_token, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+    expect(account.kanban_funnels.count).to eq(0)
+  end
+
+  it 'preserves occupied stages while allowing renaming and reordering' do
+    funnel = account.kanban_funnels.create!(name: 'Sales', stages: stages)
+    create(:conversation, account: account, custom_attributes: { kanban_funnel_id: funnel.id.to_s, kanban_status: 'won' })
+    patch "#{url}/#{funnel.id}", params: { funnel: { stages: [stages.first] } }, headers: admin.create_new_auth_token, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(funnel.reload.stage_ids).to eq(%w[new won])
+    updated = [{ id: 'won', name: 'Converted' }, stages.first]
+    patch "#{url}/#{funnel.id}", params: { funnel: { stages: updated } }, headers: admin.create_new_auth_token, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(funnel.reload.stage_ids).to eq(%w[won new])
+  end
 end

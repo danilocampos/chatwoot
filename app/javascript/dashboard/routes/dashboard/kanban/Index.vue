@@ -7,7 +7,7 @@ import KanbanAPI from 'dashboard/api/kanban';
 import KanbanFunnelsAPI from 'dashboard/api/kanbanFunnels';
 import FunnelEditor from 'dashboard/components/kanban/FunnelEditor.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import Icon from 'dashboard/components-next/icon/Icon.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import KanbanBoard from 'dashboard/components/kanban/KanbanBoard.vue';
 import KanbanFilters from 'dashboard/components/kanban/KanbanFilters.vue';
@@ -27,6 +27,7 @@ const funnelId = ref('');
 const editorOpen = ref(false);
 const editingFunnel = ref(null);
 const savingFunnel = ref(false);
+const funnelError = ref('');
 const transferring = ref(null);
 const destinationId = ref('');
 const destinationStage = ref('');
@@ -36,6 +37,13 @@ const isAdmin = computed(
 const selectedFunnel = computed(() =>
   funnels.value.find(funnel => String(funnel.id) === String(funnelId.value))
 );
+const funnelOptions = computed(() => [
+  { value: '', label: t('KANBAN.FUNNELS.DEFAULT') },
+  ...funnels.value.map(funnel => ({
+    value: String(funnel.id),
+    label: funnel.name,
+  })),
+]);
 let loadSequence = 0;
 
 const inboxes = computed(() => store.getters['inboxes/getInboxes']);
@@ -82,6 +90,12 @@ const destinationStages = computed(() => {
         name: column.title,
       }));
 });
+const destinationStageOptions = computed(() =>
+  destinationStages.value.map(stage => ({
+    value: stage.id,
+    label: stage.name,
+  }))
+);
 
 const loadConversations = async () => {
   loadSequence += 1;
@@ -112,11 +126,14 @@ const changeFunnel = () => {
 };
 
 const openEditor = funnel => {
+  funnelError.value = '';
   editingFunnel.value = funnel || null;
   editorOpen.value = true;
 };
 
 const saveFunnel = async funnel => {
+  if (savingFunnel.value) return;
+  funnelError.value = '';
   savingFunnel.value = true;
   try {
     const { data } = editingFunnel.value
@@ -128,7 +145,7 @@ const saveFunnel = async funnel => {
     funnelId.value = String(data.id);
     changeFunnel();
   } catch {
-    useAlert(t('KANBAN.FUNNELS.ERROR'));
+    funnelError.value = t('KANBAN.FUNNELS.ERROR');
   } finally {
     savingFunnel.value = false;
   }
@@ -226,131 +243,110 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="flex flex-col w-full h-full min-h-0 bg-n-background">
-    <header
-      class="flex justify-between items-center px-5 py-4 border-b bg-n-solid-1 border-n-weak"
-    >
-      <div>
-        <h1 class="text-xl font-semibold text-n-slate-12">
-          {{ t('KANBAN.TITLE') }}
-        </h1>
-        <p class="mt-1 text-sm text-n-slate-10">
-          {{ t('KANBAN.CONVERSATION_COUNT', { count: stats.total || 0 }) }}
-        </p>
+  <main class="flex flex-col w-full h-full min-h-0 bg-n-surface-1">
+    <header class="px-6 pt-6 shrink-0">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <h1 class="text-xl font-medium truncate text-n-slate-12">
+            {{ t('KANBAN.TITLE') }}
+          </h1>
+          <p class="mt-1 mb-0 text-sm text-n-slate-10">
+            {{ t('KANBAN.CONVERSATION_COUNT', { count: stats.total || 0 }) }}
+          </p>
+        </div>
+        <Button
+          :label="t('KANBAN.REFRESH')"
+          icon="i-lucide-refresh-cw"
+          color="slate"
+          size="sm"
+          variant="ghost"
+          :is-loading="isLoading"
+          class="shrink-0"
+          @click="loadConversations"
+        />
       </div>
-      <Button
-        outline
-        slate
-        md
-        :is-loading="isLoading"
-        @click="loadConversations"
-      >
-        <Icon icon="i-lucide-refresh-cw" class="mr-2 size-4" />
-        {{ t('KANBAN.REFRESH') }}
-      </Button>
-    </header>
 
-    <div
-      class="flex flex-wrap gap-3 items-center px-5 py-3 border-b border-n-weak"
-    >
-      <label class="flex gap-2 items-center text-sm">
-        {{ t('KANBAN.FUNNELS.LABEL') }}
-        <select
+      <div
+        class="flex flex-wrap items-center gap-2 pt-5 pb-4 border-b border-n-weak"
+      >
+        <span class="me-1 text-sm font-medium text-n-slate-11">
+          {{ t('KANBAN.FUNNELS.LABEL') }}
+        </span>
+        <Select
           v-model="funnelId"
+          :options="funnelOptions"
+          :aria-label="t('KANBAN.FUNNELS.LABEL')"
           :disabled="savingFunnel || !!movingConversationId"
-          class="!mb-0"
-          @change="changeFunnel"
-        >
-          <option value="">{{ t('KANBAN.FUNNELS.DEFAULT') }}</option>
-          <option
-            v-for="funnel in funnels"
-            :key="funnel.id"
-            :value="String(funnel.id)"
-          >
-            {{ funnel.name }}
-          </option>
-        </select>
-      </label>
-      <Button
-        v-if="isAdmin"
-        :disabled="savingFunnel"
-        sm
-        outline
-        @click="openEditor(null)"
-      >
-        {{ t('KANBAN.FUNNELS.NEW') }}
-      </Button>
-      <Button
-        v-if="isAdmin && selectedFunnel"
-        :disabled="savingFunnel"
-        sm
-        ghost
-        @click="openEditor(selectedFunnel)"
-      >
-        {{ t('KANBAN.FUNNELS.EDIT') }}
-      </Button>
-    </div>
+          class="min-w-0 max-w-full [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
+          @update:model-value="changeFunnel"
+        />
+        <Button
+          v-if="isAdmin"
+          :label="t('KANBAN.FUNNELS.NEW')"
+          icon="i-lucide-plus"
+          size="sm"
+          :disabled="savingFunnel"
+          @click="openEditor(null)"
+        />
+        <Button
+          v-if="isAdmin && selectedFunnel"
+          :label="t('KANBAN.FUNNELS.EDIT')"
+          icon="i-lucide-pen-line"
+          color="slate"
+          size="sm"
+          variant="ghost"
+          :disabled="savingFunnel"
+          @click="openEditor(selectedFunnel)"
+        />
+      </div>
+    </header>
     <FunnelEditor
       v-if="editorOpen"
       :key="editingFunnel?.id || 'new'"
       :funnel="editingFunnel"
       :saving="savingFunnel"
+      :error="funnelError"
       @save="saveFunnel"
       @cancel="editorOpen = false"
     />
     <form
       v-if="transferring"
-      class="flex flex-wrap gap-3 items-center p-4 border-b border-n-weak"
+      class="flex flex-wrap items-center gap-2 px-6 py-4 border-b border-n-weak bg-n-alpha-1"
       @submit.prevent="transferConversation"
     >
-      <span class="text-sm">{{
+      <span class="text-sm font-medium text-n-slate-11">{{
         t('KANBAN.FUNNELS.MOVING', { name: transferring.contact.name })
       }}</span>
-      <select
+      <Select
         v-model="destinationId"
         :aria-label="t('KANBAN.FUNNELS.LABEL')"
+        :options="funnelOptions"
         :disabled="!!movingConversationId"
-        class="!mb-0"
-        @change="destinationStage = destinationStages[0].id"
-      >
-        <option value="">{{ t('KANBAN.FUNNELS.DEFAULT') }}</option>
-        <option
-          v-for="funnel in funnels"
-          :key="funnel.id"
-          :value="String(funnel.id)"
-        >
-          {{ funnel.name }}
-        </option>
-      </select>
-      <select
+        class="max-w-full [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
+        @update:model-value="destinationStage = destinationStages[0].id"
+      />
+      <Select
         v-model="destinationStage"
         :aria-label="t('KANBAN.FUNNELS.DESTINATION_STAGE')"
+        :options="destinationStageOptions"
         :disabled="!!movingConversationId"
-        class="!mb-0"
-      >
-        <option
-          v-for="stage in destinationStages"
-          :key="stage.id"
-          :value="stage.id"
-        >
-          {{ stage.name }}
-        </option>
-      </select>
-      <button
+        class="max-w-full [&>select]:w-full [&>select]:h-8 [&>select]:!py-1"
+      />
+      <Button
+        :label="t('KANBAN.FUNNELS.CONFIRM_MOVE')"
         type="submit"
+        size="sm"
         :disabled="!!movingConversationId"
-        class="px-3 py-2 rounded bg-n-brand text-white"
-      >
-        {{ t('KANBAN.FUNNELS.CONFIRM_MOVE') }}
-      </button>
-      <button
+      />
+      <Button
+        :label="t('KANBAN.FUNNELS.CANCEL')"
         type="button"
+        color="slate"
+        size="sm"
+        variant="ghost"
         :disabled="!!movingConversationId"
-        class="text-sm"
         @click="transferring = null"
-      >
-        {{ t('KANBAN.FUNNELS.CANCEL') }}
-      </button>
+      />
     </form>
 
     <KanbanFilters
