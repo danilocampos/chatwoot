@@ -65,20 +65,6 @@
 - Specs in parallel/reloading environments: prefer comparing `error.class.name` over constant class equality when asserting raised errors
 - Specs tagged `:redis_streams` talk to a real Redis (the app's own pools are MockRedis in tests, which implements no stream, blocking or scripting command). They need `REDIS_URL` to point at a running server; CI already provides one.
 
-## Worktree Workflow
-
-Use a separate git worktree + branch per task so multiple instances run in parallel, fully isolated.
-
-A new worktree only materializes **versioned** files — `git worktree add` does NOT copy the gitignored, per-worktree setup: `.env`, `.env.test`, `Procfile.worktree`, `.bundle/config`, and `CLAUDE.local.md`. Generate these per worktree with non-colliding values:
-
-- **Ports**: distinct Rails (`PORT`) and Vite (`VITE_RUBY_PORT`).
-- **Postgres**: a dedicated `POSTGRES_DATABASE`, separate for dev and test — `.env.test` overrides it so specs never touch the dev DB (dotenv-rails loads `.env.test` before `.env` under `RAILS_ENV=test`).
-- **Redis**: a distinct logical DB index (dev and test) via `REDIS_URL`.
-- **Hostname**: a distinct `*.localhost` host in `FRONTEND_URL` (macOS resolves `*.localhost` natively) so session cookies don't clash between worktrees.
-- **Overmind**: its own `OVERMIND_SOCKET`; start with `overmind start -f Procfile.worktree`.
-
-Automate this with your worktree tool's create hook (e.g. worktrunk's `pre-start`): generate the local files from a shared master `.env`, derive the values above deterministically from the branch name, run `bundle install && pnpm install`, then create the DBs (`rails db:prepare` for dev; `RAILS_ENV=test rails db:create db:schema:load` for test). Keep DB setup non-fatal so a broken seed doesn't abort worktree creation. The actual per-worktree URL/port/DB/Redis values land in that worktree's `CLAUDE.local.md`.
-
 ## Release Notes
 
 - Every GitHub release cut from this repo must include a `user-notes` block per shipped language (en, pt-BR, es) in the release body, written for non-technical end users.
