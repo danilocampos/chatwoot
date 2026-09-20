@@ -9,9 +9,22 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
   include ActionView::Context
   include SuperAdmin::NavigationHelper
 
-  helper_method :render_vue_component, :settings_open?, :settings_pages
+  helper_method :render_vue_component, :settings_open?, :settings_pages, :application_title
   # authenticiation done via devise : SuperAdmin Model
   before_action :authenticate_super_admin!
+  # The Super Admin console is internal tooling for a single pt-BR team, not a
+  # multi-tenant surface, so the locale is fixed rather than switchable per user.
+  around_action :use_pt_br_locale
+
+  def use_pt_br_locale(&)
+    I18n.with_locale(:pt_BR, &)
+  end
+
+  # Overrides Administrate::ApplicationHelper#application_title, which hardcodes the Rails
+  # app module name (`Chatwoot`) into every page <title> and has no other override point.
+  def application_title
+    GlobalConfig.get_value('INSTALLATION_NAME').presence || Rails.application.class.module_parent_name.titlecase
+  end
 
   # Override this value to specify the number of elements to display at a time
   # on index pages. Defaults to 20.
