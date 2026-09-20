@@ -177,5 +177,4 @@ RSpec.describe InternalChat::SearchService do
       expect(result[:messages]).to be_empty
     end
   end
-
 end

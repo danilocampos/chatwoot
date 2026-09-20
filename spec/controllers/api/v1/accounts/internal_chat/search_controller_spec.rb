@@ -49,7 +49,6 @@ RSpec.describe 'Internal Chat Search API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body['messages']).to be_empty
       end
-
     end
   end
 end
