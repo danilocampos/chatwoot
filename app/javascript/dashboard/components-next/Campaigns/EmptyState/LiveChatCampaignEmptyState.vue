@@ -1,5 +1,6 @@
 <script setup>
 import { ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT } from './CampaignEmptyStateContent';
+import { useBranding } from 'shared/composables/useBranding';
 
 import EmptyStateLayout from 'dashboard/components-next/EmptyStateLayout.vue';
 import CampaignCard from 'dashboard/components-next/Campaigns/CampaignCard/CampaignCard.vue';
@@ -14,6 +15,8 @@ defineProps({
     default: '',
   },
 });
+
+const { replaceInstallationName } = useBranding();
 </script>
 
 <template>
@@ -24,10 +27,13 @@ defineProps({
           v-for="campaign in ONGOING_CAMPAIGN_EMPTY_STATE_CONTENT"
           :key="campaign.id"
           :title="campaign.title"
-          :message="campaign.message"
+          :message="replaceInstallationName(campaign.message)"
           :is-enabled="campaign.enabled"
           :status="campaign.campaign_status"
-          :sender="campaign.sender"
+          :sender="{
+            ...campaign.sender,
+            name: replaceInstallationName(campaign.sender.name),
+          }"
           :inbox="campaign.inbox"
           :scheduled-at="campaign.scheduled_at"
           is-live-chat-type
