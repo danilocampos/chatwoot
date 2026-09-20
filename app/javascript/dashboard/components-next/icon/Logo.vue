@@ -9,6 +9,7 @@ const globalConfig = useMapGetter('globalConfig/get');
 <template>
   <img
     v-if="globalConfig.logoThumbnail"
+    class="rounded-[0.25rem]"
     v-bind="attrs"
     :src="globalConfig.logoThumbnail"
   />
