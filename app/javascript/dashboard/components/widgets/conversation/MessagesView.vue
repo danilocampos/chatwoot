@@ -904,7 +904,7 @@ export default {
       });
     },
     onOpenGroupsEnabledLink() {
-      window.open(wootConstants.FAZER_AI_GUIDES_URL, '_blank');
+      window.open(wootConstants.HABLAS_GUIDES_URL, '_blank');
     },
     onOpenLinkDeviceModal() {
       this.showLinkDeviceModal = true;

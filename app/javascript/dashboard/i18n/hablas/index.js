@@ -1,7 +1,7 @@
 /**
- * fazer.ai fork translations.
+ * Hablas-specific translations.
  *
- * Every key under `fazer-ai/locale/<lang>/` belongs to this fork: strings for
+ * Every key under `hablas/locale/<lang>/` belongs to this fork: strings for
  * our own features plus `overrides.json`, which replaces upstream strings.
  * The upstream tree in `../locale/` stays byte-identical to the Chatwoot
  * release we track, so upstream syncs never conflict with our translations.

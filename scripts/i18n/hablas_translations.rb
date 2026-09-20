@@ -3,9 +3,9 @@
 
 # Guards the boundary between upstream's translations and the fork's.
 #
-#   ruby scripts/i18n/fork_translations.rb check
-#   ruby scripts/i18n/fork_translations.rb drift [--base vX.Y.Z]
-#   ruby scripts/i18n/fork_translations.rb scaffold es
+#   ruby scripts/i18n/hablas_translations.rb check
+#   ruby scripts/i18n/hablas_translations.rb drift [--base vX.Y.Z]
+#   ruby scripts/i18n/hablas_translations.rb scaffold es
 #
 # `check` needs nothing but the working tree. `drift` needs the upstream tag to
 # be fetched first, which the CI workflow does explicitly since the fork's
@@ -20,12 +20,12 @@ require 'fileutils'
 # bundle. They differ in layout: the dashboard ships a folder per language (one file per
 # namespace), the survey a single file, since it is one small namespace.
 FE_TREES = [
-  { upstream: 'app/javascript/dashboard/i18n/locale', fork: 'app/javascript/dashboard/i18n/fazer-ai/locale', layout: :directory },
-  { upstream: 'app/javascript/survey/i18n/locale', fork: 'app/javascript/survey/i18n/fazer-ai/locale', layout: :file }
+  { upstream: 'app/javascript/dashboard/i18n/locale', fork: 'app/javascript/dashboard/i18n/hablas/locale', layout: :directory },
+  { upstream: 'app/javascript/survey/i18n/locale', fork: 'app/javascript/survey/i18n/hablas/locale', layout: :file }
 ].freeze
 FE_UPSTREAM = FE_TREES.first[:upstream]
 FE_FORK = FE_TREES.first[:fork]
-BE_FORK_GLOB = 'config/locales/fazer_ai*.yml'
+BE_FORK_GLOB = 'config/locales/hablas*.yml'
 OVERRIDES = 'overrides.json'
 REFERENCE_LOCALE = 'en'
 
@@ -33,7 +33,7 @@ REFERENCE_LOCALE = 'en'
 # The sync-fork flow bumps it together with the upstream merge.
 UPSTREAM_BASE = 'v4.18.0'
 
-class ForkTranslations # rubocop:disable Metrics/ClassLength
+class HablasTranslations # rubocop:disable Metrics/ClassLength
   def initialize
     @errors = []
   end
@@ -60,7 +60,7 @@ class ForkTranslations # rubocop:disable Metrics/ClassLength
               .reject { |path| File.fnmatch(BE_FORK_GLOB, path) }
 
     changed.each do |path|
-      @errors << "#{path} diverge de #{base}: traducoes do fork vao em #{FE_FORK}/<locale>/ ou config/locales/fazer_ai.<locale>.yml"
+      @errors << "#{path} diverge de #{base}: traducoes da Hablas vao em #{FE_FORK}/<locale>/ ou config/locales/hablas.<locale>.yml"
     end
     finish
   end
@@ -94,7 +94,7 @@ class ForkTranslations # rubocop:disable Metrics/ClassLength
   end
 
   def scaffold_backend(locale)
-    Dir["config/locales/fazer_ai*.#{REFERENCE_LOCALE}.yml"].each do |path|
+    Dir["config/locales/hablas*.#{REFERENCE_LOCALE}.yml"].each do |path|
       copy = path.sub(".#{REFERENCE_LOCALE}.yml", ".#{locale}.yml")
       tree = YAML.safe_load_file(path, aliases: true)
       body = { locale => tree.values.first }.to_yaml(line_width: -1).delete_prefix("---\n")
@@ -158,7 +158,7 @@ class ForkTranslations # rubocop:disable Metrics/ClassLength
   # the other, and merging them lets a translated dashboard key mask a missing survey one.
   def key_scopes(locale)
     scopes = FE_TREES.to_h { |tree| [tree[:fork], keys_in(tree_fork_paths(tree, locale))] }
-    scopes.merge('config/locales' => keys_in(Dir["config/locales/fazer_ai*.#{locale}.yml"]))
+    scopes.merge('config/locales' => keys_in(Dir["config/locales/hablas*.#{locale}.yml"]))
   end
 
   def tree_fork_paths(tree, locale)
@@ -263,7 +263,7 @@ class ForkTranslations # rubocop:disable Metrics/ClassLength
 
   def check_upstream_indexes_ignore_the_fork
     FE_TREES.flat_map { |tree| Dir["#{tree[:upstream]}/*/index.js"] }.each do |path|
-      next unless File.read(path).include?('fazer-ai')
+      next unless File.read(path).include?('hablas')
 
       @errors << "#{path} referencia a arvore do fork; o merge acontece em i18n/index.js"
     end
@@ -295,10 +295,10 @@ end
 
 command = ARGV[0] || 'check'
 case command
-when 'check' then ForkTranslations.new.check
+when 'check' then HablasTranslations.new.check
 when 'drift'
   base_index = ARGV.index('--base')
-  ForkTranslations.new.drift(base_index ? ARGV[base_index + 1] : UPSTREAM_BASE)
-when 'scaffold' then ForkTranslations.new.scaffold(ARGV[1])
+  HablasTranslations.new.drift(base_index ? ARGV[base_index + 1] : UPSTREAM_BASE)
+when 'scaffold' then HablasTranslations.new.scaffold(ARGV[1])
 else abort "comando desconhecido: #{command} (use check, drift ou scaffold)"
 end

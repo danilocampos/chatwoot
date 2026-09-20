@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Middleware # rubocop:disable Style/ClassAndModuleChildren
-  class FazerAiPlatformHeader
+  class HablasPlatformHeader
     def initialize(app)
       @app = app
     end

@@ -1,4 +1,4 @@
-# fazer.ai fork translations for Chatwoot mailer templates.
+# Hablas installation translations for Chatwoot mailer templates.
 #
 # Upstream ships these templates with the copy hardcoded in ERB, so the fork
 # extracted them into i18n keys to translate them. They are not our features:

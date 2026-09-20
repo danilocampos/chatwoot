@@ -57,11 +57,7 @@
             "RECONNECTING": "Conectando...",
             "LINK_DEVICE": "Vincular dispositivo",
             "DISCONNECT": "Desconectar",
-            "CONNECTED": "Su dispositivo se conectó correctamente. Ya puede empezar a enviar y recibir mensajes.",
-            "IMPORT_SESSION_TITLE": "¿El código QR no funciona?",
-            "IMPORT_SESSION_SHOW_MORE": "Ver más",
-            "IMPORT_SESSION_DESC": "WhatsApp ahora exige una clave de acceso al vincular algunas cuentas, lo que bloquea el código QR. Instale la extensión del navegador para importar una sesión que ya tenga iniciada en WhatsApp Web.",
-            "IMPORT_SESSION_INSTALL": "Instalar la extensión"
+            "CONNECTED": "Su dispositivo se conectó correctamente. Ya puede empezar a enviar y recibir mensajes."
           }
         },
         "SESSION": {

@@ -2,7 +2,6 @@ import { shallowMount, flushPromises } from '@vue/test-utils';
 import WhatsappLinkDeviceModal from '../WhatsappLinkDeviceModal.vue';
 
 const KEY = 'INBOX_MGMT.ADD.WHATSAPP.EXTERNAL_PROVIDER.LINK_DEVICE_MODAL';
-const IMPORT_TITLE_KEY = `${KEY}.IMPORT_SESSION_TITLE`;
 const USE_PAIRING_CODE_KEY = `${KEY}.USE_PAIRING_CODE`;
 const USE_QRCODE_KEY = `${KEY}.USE_QRCODE`;
 const LOADING_PAIRING_CODE_KEY = `${KEY}.LOADING_PAIRING_CODE`;
@@ -50,20 +49,6 @@ const mountModal = (
 beforeEach(() => dispatch.mockClear());
 
 describe('WhatsappLinkDeviceModal', () => {
-  // The extension hands over Baileys credentials, so a provider that cannot consume
-  // them must not be offered an install and a scan that end in a refused request.
-  it('hides the session import when the provider cannot accept one', () => {
-    const wrapper = mountModal(['qr_pairing']);
-
-    expect(wrapper.html()).not.toContain(IMPORT_TITLE_KEY);
-  });
-
-  it('offers the session import when the provider declares it', () => {
-    const wrapper = mountModal(['qr_pairing', 'session_import']);
-
-    expect(wrapper.html()).toContain(IMPORT_TITLE_KEY);
-  });
-
   describe('pairing by code', () => {
     const connecting = {
       connection: 'connecting',

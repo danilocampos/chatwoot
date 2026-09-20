@@ -1,9 +1,9 @@
 import messages from 'survey/i18n';
-import { forkMessages } from 'survey/i18n/fazer-ai';
+import { forkMessages } from 'survey/i18n/hablas';
 import upstreamEn from 'survey/i18n/locale/en.json';
 import upstreamPtBr from 'survey/i18n/locale/pt_BR.json';
 
-describe('fazer.ai survey translation overlay', () => {
+describe('Hablas survey translation overlay', () => {
   it('exposes a fork tree for every language we translate', () => {
     expect(Object.keys(forkMessages).sort()).toEqual(['en', 'es', 'pt_BR']);
   });

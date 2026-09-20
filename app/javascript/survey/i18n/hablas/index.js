@@ -1,7 +1,7 @@
 /**
- * fazer.ai fork translations for the survey app.
+ * Hablas-specific translations for the survey app.
  *
- * Same contract as the dashboard overlay: every key under `fazer-ai/locale/<lang>.json`
+ * Same contract as the dashboard overlay: every key under `hablas/locale/<lang>.json`
  * belongs to this fork, and the upstream tree in `../locale/` stays byte-identical to the
  * Chatwoot release we track, so upstream syncs never conflict with our strings.
  *

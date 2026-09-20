@@ -1,8 +1,8 @@
 /**
- * Shared plumbing for the fazer.ai translation overlays.
+ * Shared plumbing for the installation translation overlays.
  *
  * Upstream's locale trees stay byte-identical to the Chatwoot release we track, so every
- * string the fork owns lives in a sibling `fazer-ai/locale/` tree that is deep merged on
+ * string the fork owns lives in a sibling `hablas/locale/` tree that is deep merged on
  * top. The dashboard and the survey each have their own bundle and their own upstream
  * tree, so each keeps its own overlay entry point; only the merging lives here.
  *

@@ -19,7 +19,6 @@ export const SESSION_PROVIDERS = ['baileys', 'zapi', 'native', 'uazapi'];
 export const CAPABILITIES = {
   QR_PAIRING: 'qr_pairing',
   CODE_PAIRING: 'code_pairing',
-  SESSION_IMPORT: 'session_import',
   ECHO_BY_RESERVED_ID: 'echo_by_reserved_id',
   EDIT: 'edit',
   REVOKE: 'revoke',

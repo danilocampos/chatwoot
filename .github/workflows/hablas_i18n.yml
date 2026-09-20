@@ -1,5 +1,5 @@
-# Fork-only workflow: keeps the fazer.ai translations separate from upstream's.
-name: fazer.ai i18n
+# Keeps the Hablas translations separate from upstream's.
+name: Hablas i18n
 
 on:
   push:
@@ -25,15 +25,15 @@ jobs:
 
       # Structural rules that hold regardless of which upstream release we track.
       - name: Check fork translation boundaries
-        run: ruby scripts/i18n/fork_translations.rb check
+        run: ruby scripts/i18n/hablas_translations.rb check
 
       # The fork's remote does not carry Chatwoot's tags, so fetch the tracked
       # release before comparing upstream's translation files against it.
       - name: Fetch tracked upstream release
         run: |
-          base=$(grep -m1 "^UPSTREAM_BASE = " scripts/i18n/fork_translations.rb | cut -d"'" -f2)
+          base=$(grep -m1 "^UPSTREAM_BASE = " scripts/i18n/hablas_translations.rb | cut -d"'" -f2)
           echo "UPSTREAM_BASE=$base" >> "$GITHUB_ENV"
           git fetch --no-tags --depth=1 https://github.com/chatwoot/chatwoot.git "refs/tags/$base:refs/tags/$base"
 
       - name: Check upstream translation files are untouched
-        run: ruby scripts/i18n/fork_translations.rb drift --base "$UPSTREAM_BASE"
+        run: ruby scripts/i18n/hablas_translations.rb drift --base "$UPSTREAM_BASE"

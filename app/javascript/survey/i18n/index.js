@@ -1,4 +1,4 @@
-import { withForkMessages } from './fazer-ai';
+import { withForkMessages } from './hablas';
 import ar from './locale/ar.json';
 import bg from './locale/bg.json';
 import ca from './locale/ca.json';

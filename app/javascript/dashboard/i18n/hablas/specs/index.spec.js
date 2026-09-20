@@ -1,12 +1,12 @@
 import { createI18n } from 'vue-i18n';
 import messages from 'dashboard/i18n';
-import { forkMessages, withForkMessages } from 'dashboard/i18n/fazer-ai';
+import { forkMessages, withForkMessages } from 'dashboard/i18n/hablas';
 import upstreamEn from 'dashboard/i18n/locale/en';
 import upstreamPtBr from 'dashboard/i18n/locale/pt_BR';
 import upstreamEs from 'dashboard/i18n/locale/es';
 import upstreamFr from 'dashboard/i18n/locale/fr';
 
-describe('fazer.ai translation overlay', () => {
+describe('Hablas translation overlay', () => {
   it('exposes a fork tree for every language we translate', () => {
     expect(Object.keys(forkMessages).sort()).toEqual(['en', 'es', 'pt_BR']);
   });

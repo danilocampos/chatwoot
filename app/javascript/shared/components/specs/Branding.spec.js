@@ -1,6 +1,6 @@
 import { shallowMount } from '@vue/test-utils';
 
-const mockGlobalConfig = { value: { installationName: 'Chatwoot fazer.ai' } };
+const mockGlobalConfig = { value: { installationName: 'Hablas' } };
 
 vi.mock('dashboard/composables/store.js', () => ({
   useMapGetter: () => mockGlobalConfig,
@@ -8,7 +8,7 @@ vi.mock('dashboard/composables/store.js', () => ({
 
 // Read at module scope by the component, so it has to exist before the import below.
 window.globalConfig = {
-  BRAND_NAME: 'Chatwoot fazer.ai',
+  BRAND_NAME: 'Hablas',
   LOGO_THUMBNAIL: '/brand-assets/logo_thumbnail.svg',
   WIDGET_BRAND_URL: 'https://www.chatwoot.com',
 };
@@ -38,7 +38,7 @@ describe('Branding', () => {
   it('names the installation when no brand name is given', () => {
     const wrapper = mountBranding();
 
-    expect(wrapper.text()).toContain('Powered by Chatwoot fazer.ai');
+    expect(wrapper.text()).toContain('Powered by Hablas');
   });
 
   it('names the account when a brand name is given', () => {

@@ -1,10 +1,10 @@
-# fazer.ai fork translations.
+# Hablas installation translations.
 #
 # Rails deep-merges every config/locales/*.yml, so these keys land on top of
 # upstream's <locale>.yml without touching it. Keys for our own features go
 # here; upstream copy we merely translate does not.
 #
-# Adding a language means adding fazer_ai.<locale>.yml. Nothing else changes.
+# Adding a language means adding hablas.<locale>.yml. Nothing else changes.
 es:
   internal_chat:
     default_category_name: Canales
